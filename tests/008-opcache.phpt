@@ -24,8 +24,9 @@ var_dump(second(2));
 var_dump(\turbocov\collect());
 ?>
 --EXPECTF--
-Warning: %s: OPcache is on for this SAPI, thus the coverage collection is off in Unknown on line 0
 bool(false)
+
+Warning: %s: OPcache is on for this SAPI, thus the coverage collection is off in %s on line %d
 int(1)
 array(0) {
 }

@@ -74,6 +74,7 @@ typedef struct _tc_refs {
 } tc_refs;
 
 static bool tc_ini_enabled;
+static bool tc_opcache_conflict;
 static bool tc_active;
 static bool tc_collecting;
 static bool tc_dirty;
@@ -671,6 +672,11 @@ PHP_NAMED_FUNCTION(tc_function_start)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
+	if (tc_opcache_conflict) {
+		zend_error(E_WARNING, TURBOCOV_NAME ": OPcache is on for this SAPI, thus the coverage collection is off");
+		tc_opcache_conflict = false;
+	}
+
 	if (!tc_active) {
 		return;
 	}
@@ -905,7 +911,8 @@ static PHP_RINIT_FUNCTION(turbocov)
 	if (!tc_orig_compile_file) {
 		/* A probe changes the opcodes in place. OPcache shares its opcodes between processes and can protect them. */
 		if (tc_opcache_caches_scripts()) {
-			zend_error(E_WARNING, TURBOCOV_NAME ": OPcache is on for this SAPI, thus the coverage collection is off");
+			/* No message here: most processes do not collect coverage, and a message at startup can break their output. */
+			tc_opcache_conflict = true;
 			tc_ini_enabled = false;
 
 			return SUCCESS;

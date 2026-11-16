@@ -89,7 +89,7 @@ The extension then registers as `pcov`. The functions are `\pcov\start()` and so
 
 ## Limits
 
-- OPcache: when OPcache is on for the current SAPI, turbocov turns the collection off and gives a warning.
+- OPcache: when OPcache is on for the current SAPI, turbocov turns the collection off. The first call of `start()` gives a warning.
 - Other extensions that replace the instruction loop (PCOV, phpdbg) make turbocov slow. The results stay correct.
 - Xdebug: not tested together.
 - No hit counts, no branch coverage, no path coverage.
