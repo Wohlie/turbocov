@@ -96,6 +96,9 @@ static size_t tc_waiting_capacity;
 static zend_ulong tc_stat_probes;
 static zend_ulong tc_stat_fires;
 
+/* Handlers that other extensions registered before turbocov. The probe callback forwards to them. */
+static user_opcode_handler_t tc_previous_handlers[256];
+
 static zend_op_array *(*tc_orig_compile_file)(zend_file_handle *file_handle, int type);
 static zend_op_array *(*tc_orig_compile_string)(zend_string *source_string, const char *filename, zend_compile_position position);
 
@@ -154,6 +157,13 @@ static void tc_waiting_reset(void)
 	tc_waiting_count = 0;
 }
 
+static zend_always_inline int tc_forward(zend_execute_data *execute_data)
+{
+	user_opcode_handler_t previous = tc_previous_handlers[EX(opline)->opcode];
+
+	return previous ? previous(execute_data) : ZEND_USER_OPCODE_DISPATCH;
+}
+
 /*
  * The VM calls this function for an opcode that has the ZEND_USER_OPCODE handler.
  * A probe records its line and puts the original handler back.
@@ -168,7 +178,7 @@ static int tc_probe_handler(zend_execute_data *execute_data)
 	uint32_t number;
 
 	if (UNEXPECTED(!func || !ZEND_USER_CODE(func->type))) {
-		return ZEND_USER_OPCODE_DISPATCH;
+		return tc_forward(execute_data);
 	}
 
 	unit = func->op_array.reserved[tc_slot];
@@ -177,13 +187,13 @@ static int tc_probe_handler(zend_execute_data *execute_data)
 	if (UNEXPECTED((uintptr_t) unit <= (uintptr_t) TC_NO_PROBES)
 		|| UNEXPECTED(opline < unit->opcodes)
 		|| UNEXPECTED(opline >= unit->opcodes + unit->last)) {
-		return ZEND_USER_OPCODE_DISPATCH;
+		return tc_forward(execute_data);
 	}
 
 	number = unit->index[opline - unit->opcodes];
 
 	if (UNEXPECTED(number == 0)) {
-		return ZEND_USER_OPCODE_DISPATCH;
+		return tc_forward(execute_data);
 	}
 
 	probe = &unit->probes[number - 1];
@@ -191,9 +201,10 @@ static int tc_probe_handler(zend_execute_data *execute_data)
 	/*
 	 * An extension that replaces zend_execute_ex (PCOV, phpdbg) calls handlers through zend_vm_call_opcode_handler().
 	 * That function ignores opline->handler, thus a probe that already fired comes here again.
+	 * The same occurs for an opcode that has a handler of a different extension, because its original handler is ZEND_USER_OPCODE too.
 	 */
 	if (UNEXPECTED(probe->state != TC_ARMED)) {
-		return ZEND_USER_OPCODE_DISPATCH;
+		return tc_forward(execute_data);
 	}
 
 	((zend_op *) opline)->handler = probe->handler;
@@ -232,16 +243,18 @@ static void tc_register_handlers(void)
 {
 	for (int opcode = 0; opcode < 256; opcode++) {
 		if (opcode != ZEND_USER_OPCODE) {
+			tc_previous_handlers[opcode] = zend_get_user_opcode_handler((uint8_t) opcode);
 			zend_set_user_opcode_handler((uint8_t) opcode, tc_probe_handler);
 		}
 	}
 }
 
+/* Opcodes that have a handler of a different extension keep the ZEND_USER_OPCODE handler, as without turbocov. */
 static void tc_unregister_handlers(void)
 {
 	for (int opcode = 0; opcode < 256; opcode++) {
 		if (opcode != ZEND_USER_OPCODE) {
-			zend_set_user_opcode_handler((uint8_t) opcode, NULL);
+			zend_set_user_opcode_handler((uint8_t) opcode, tc_previous_handlers[opcode]);
 		}
 	}
 }
