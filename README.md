@@ -41,7 +41,7 @@ The test suite of a PHPStan extension (870 tests, PHPUnit 10.5, PHP 8.5, OPcache
 
 - PHP 8.4 or 8.5, non-thread-safe build.
 - Linux or macOS.
-- The CLI SAPI with OPcache off (`opcache.enable_cli=0`, which is the default).
+- The CLI SAPI. OPcache can be on or off.
 
 ## Build
 
@@ -89,7 +89,8 @@ The extension then registers as `pcov`. The functions are `\pcov\start()` and so
 
 ## Limits
 
-- OPcache: when OPcache is on for the current SAPI, turbocov turns the collection off. The first call of `start()` gives a warning.
+- OPcache: turbocov puts its probes into the code that OPcache caches. This is not possible with `opcache.protect_memory=1`, with `opcache.file_cache`, with the JIT, and in a SAPI other than the CLI. In these cases turbocov turns the collection off, and the first call of `start()` gives a warning.
+- OPcache optimizer: the optimizer can remove code, and a line without code is not executable. PCOV has the same behavior. Set `opcache.optimization_level=0` for line data that does not depend on the optimizer.
 - Other extensions that replace the instruction loop (PCOV, phpdbg) make turbocov slow. The results stay correct.
 - Xdebug: not tested together.
 - No hit counts, no branch coverage, no path coverage.

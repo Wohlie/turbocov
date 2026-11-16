@@ -1,5 +1,5 @@
 --TEST--
-With OPcache on for the CLI the extension turns the collection off
+With OPcache on for the CLI the probes go into the cached code
 --EXTENSIONS--
 turbocov
 --SKIPIF--
@@ -11,22 +11,31 @@ if (!extension_loaded('Zend OPcache')) {
 --INI--
 opcache.enable=1
 opcache.enable_cli=1
+opcache.jit=disable
+opcache.protect_memory=0
+opcache.file_update_protection=0
 turbocov.directory={PWD}/fixtures
 --FILE--
 <?php
+$file = __DIR__ . '/fixtures/functions.php';
 var_dump(\turbocov\enabled());
+require $file;
+var_dump(opcache_is_script_cached($file));
 
-\turbocov\start();
-require __DIR__ . '/fixtures/functions.php';
-var_dump(second(2));
-\turbocov\stop();
+for ($run = 0; $run < 2; $run++) {
+    \turbocov\start();
+    second(2);
+    \turbocov\stop();
 
-var_dump(\turbocov\collect());
-?>
---EXPECTF--
-bool(false)
-
-Warning: %s: OPcache is on for this SAPI, thus the coverage collection is off in %s on line %d
-int(1)
-array(0) {
+    $lines = \turbocov\collect(\turbocov\inclusive, [$file])[$file];
+    $covered = array_keys(array_filter($lines, static fn (int $status): bool => $status === 1));
+    sort($covered);
+    echo implode(',', $covered), "\n";
+    \turbocov\clear();
 }
+?>
+--EXPECT--
+bool(true)
+bool(true)
+5,9,14,16,17,20
+5,9,14,16,17,20

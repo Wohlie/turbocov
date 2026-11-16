@@ -74,7 +74,7 @@ typedef struct _tc_refs {
 } tc_refs;
 
 static bool tc_ini_enabled;
-static bool tc_opcache_conflict;
+static const char *tc_opcache_conflict;
 static bool tc_active;
 static bool tc_collecting;
 static bool tc_dirty;
@@ -412,11 +412,6 @@ static void tc_process_op_array(zend_op_array *op_array)
 		return;
 	}
 
-	/* Without a reference counter the opcodes are in the shared memory of OPcache, which can be read-only. */
-	if (!op_array->refcount || (op_array->fn_flags & ZEND_ACC_IMMUTABLE)) {
-		return;
-	}
-
 	if (op_array->reserved[tc_slot]) {
 		return;
 	}
@@ -717,8 +712,8 @@ PHP_NAMED_FUNCTION(tc_function_start)
 	ZEND_PARSE_PARAMETERS_NONE();
 
 	if (tc_opcache_conflict) {
-		zend_error(E_WARNING, TURBOCOV_NAME ": OPcache is on for this SAPI, thus the coverage collection is off");
-		tc_opcache_conflict = false;
+		zend_error(E_WARNING, TURBOCOV_NAME ": the coverage collection is off, because %s", tc_opcache_conflict);
+		tc_opcache_conflict = NULL;
 	}
 
 	if (!tc_active) {
@@ -914,14 +909,42 @@ static PHP_MSHUTDOWN_FUNCTION(turbocov)
 	return SUCCESS;
 }
 
-/* OPcache keeps the "cli" SAPI off unless opcache.enable_cli is set. */
-static bool tc_opcache_caches_scripts(void)
+/*
+ * A probe changes opcodes in place. With OPcache the opcodes of cached files are in its shared memory.
+ * In a CLI process that memory is private and writable, thus probes work there.
+ * Returns the reason when probes cannot work, else NULL.
+ */
+static const char *tc_find_opcache_conflict(void)
 {
-	if (!INI_BOOL("opcache.enable")) {
-		return false;
+	bool is_cli = strcmp(sapi_module.name, "cli") == 0 || strcmp(sapi_module.name, "phpdbg") == 0;
+	const char *value;
+
+	if (!INI_BOOL("opcache.enable") || (strcmp(sapi_module.name, "cli") == 0 && !INI_BOOL("opcache.enable_cli"))) {
+		return NULL;
 	}
 
-	return strcmp(sapi_module.name, "cli") != 0 || INI_BOOL("opcache.enable_cli");
+	if (!is_cli) {
+		return "OPcache shares the compiled code between the processes of this SAPI";
+	}
+
+	if (INI_BOOL("opcache.protect_memory")) {
+		return "opcache.protect_memory makes the compiled code read-only";
+	}
+
+	value = INI_STR("opcache.file_cache");
+
+	if (value && *value) {
+		return "opcache.file_cache stores the compiled code for other processes";
+	}
+
+	value = INI_STR("opcache.jit");
+
+	if (value && *value && INI_INT("opcache.jit_buffer_size") > 0
+		&& strcmp(value, "disable") != 0 && strcmp(value, "off") != 0 && strcmp(value, "0") != 0) {
+		return "the JIT of OPcache is on";
+	}
+
+	return NULL;
 }
 
 /*
@@ -953,10 +976,10 @@ static PHP_RINIT_FUNCTION(turbocov)
 	}
 
 	if (!tc_orig_compile_file) {
-		/* A probe changes the opcodes in place. OPcache shares its opcodes between processes and can protect them. */
-		if (tc_opcache_caches_scripts()) {
+		tc_opcache_conflict = tc_find_opcache_conflict();
+
+		if (tc_opcache_conflict) {
 			/* No message here: most processes do not collect coverage, and a message at startup can break their output. */
-			tc_opcache_conflict = true;
 			tc_ini_enabled = false;
 
 			return SUCCESS;
