@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 196" width="720" height="196" role="img" aria-labelledby="title desc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="title">Time that a coverage driver adds to a test suite</title>
+  <desc id="desc">A test suite of 870 tests takes 8.7 seconds without coverage. turbocov adds 1.0 second, PCOV adds 12.1 seconds, Xdebug adds 38.8 seconds.</desc>
+  <style>
+    .name { fill: #0b0b0b; font-size: 15px; font-weight: 600; }
+    .value { fill: #0b0b0b; font-size: 14px; }
+    .note { fill: #52514e; font-size: 12px; }
+    .axis { stroke: #c9c8c2; stroke-width: 1; }
+    .bar { fill: #2a78d6; }
+    @media (prefers-color-scheme: dark) {
+      .name, .value { fill: #f0efec; }
+      .note { fill: #c3c2b7; }
+      .axis { stroke: #55544f; }
+      .bar { fill: #3987e5; }
+    }
+  </style>
+
+  <text class="note" x="120" y="18">Time added to a test suite that takes 8.7 s without coverage (870 tests, PHP 8.5)</text>
+
+  <line class="axis" x1="120" y1="32" x2="120" y2="164"/>
+
+  <text class="name" x="108" y="61" text-anchor="end">turbocov</text>
+  <path class="bar" d="M120 44 h8 a4 4 0 0 1 4 4 v16 a4 4 0 0 1 -4 4 h-8 z"/>
+  <text class="value" x="142" y="61">+1.0 s   (+12 %)</text>
+
+  <text class="name" x="108" y="105" text-anchor="end">PCOV</text>
+  <path class="bar" d="M120 88 h137 a4 4 0 0 1 4 4 v16 a4 4 0 0 1 -4 4 h-137 z"/>
+  <text class="value" x="271" y="105">+12.1 s   (+140 %)</text>
+
+  <text class="name" x="108" y="149" text-anchor="end">Xdebug</text>
+  <path class="bar" d="M120 132 h447 a4 4 0 0 1 4 4 v16 a4 4 0 0 1 -4 4 h-447 z"/>
+  <text class="value" x="581" y="149">+38.8 s   (+447 %)</text>
+
+  <text class="note" x="120" y="186">Mean of five runs. PCOV 1.0.12, Xdebug in coverage mode, OPcache off.</text>
+</svg>
