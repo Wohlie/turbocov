@@ -1,0 +1,16 @@
+#ifndef PHP_TURBOCOV_H
+#define PHP_TURBOCOV_H
+
+#define PHP_TURBOCOV_VERSION "0.1.0-dev"
+
+/* PHPUnit selects its PCOV driver when an extension with the name "pcov" is loaded. */
+#ifdef TURBOCOV_AS_PCOV
+# define TURBOCOV_NAME "pcov"
+#else
+# define TURBOCOV_NAME "turbocov"
+#endif
+
+extern zend_module_entry turbocov_module_entry;
+#define phpext_turbocov_ptr &turbocov_module_entry
+
+#endif

@@ -1,0 +1,22 @@
+{
+    "name": "shipmonk/turbocov",
+    "description": "Line coverage driver for PHP that runs covered code at plain PHP speed",
+    "type": "php-ext",
+    "require": {
+        "php": "~8.4.0 || ~8.5.0"
+    },
+    "php-ext": {
+        "extension-name": "turbocov",
+        "support-zts": false,
+        "os-families-exclude": [
+            "windows"
+        ],
+        "configure-options": [
+            {
+                "name": "enable-turbocov-as-pcov",
+                "description": "Register the extension, its functions and its INI settings under the name pcov",
+                "needs-value": false
+            }
+        ]
+    }
+}
