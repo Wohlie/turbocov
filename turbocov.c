@@ -158,6 +158,36 @@ static void tc_waiting_reset(void)
 	tc_waiting_count = 0;
 }
 
+/* Records one fired probe. The caller puts the original handler back. */
+static zend_always_inline void tc_record(tc_unit *unit, uint32_t index)
+{
+	tc_probe *probe = &unit->probes[index];
+
+	tc_stat_fires++;
+
+	if (tc_collecting) {
+		tc_file *file = unit->file;
+
+		probe->state = TC_HIT;
+		tc_refs_push(&tc_hits, unit, index);
+		tc_dirty = true;
+
+		if (!file->waiting) {
+			file->waiting = true;
+
+			if (tc_waiting_count == tc_waiting_capacity) {
+				tc_waiting_capacity = tc_waiting_capacity ? tc_waiting_capacity * 2 : 64;
+				tc_waiting = perealloc(tc_waiting, tc_waiting_capacity * sizeof(tc_file *), 1);
+			}
+
+			tc_waiting[tc_waiting_count++] = file;
+		}
+	} else {
+		probe->state = TC_STRAY;
+		tc_refs_push(&tc_strays, unit, index);
+	}
+}
+
 static zend_always_inline int tc_forward(zend_execute_data *execute_data)
 {
 	user_opcode_handler_t previous = tc_previous_handlers[EX(opline)->opcode];
@@ -209,29 +239,7 @@ static int tc_probe_handler(zend_execute_data *execute_data)
 	}
 
 	((zend_op *) opline)->handler = probe->handler;
-	tc_stat_fires++;
-
-	if (tc_collecting) {
-		tc_file *file = unit->file;
-
-		probe->state = TC_HIT;
-		tc_refs_push(&tc_hits, unit, number - 1);
-		tc_dirty = true;
-
-		if (!file->waiting) {
-			file->waiting = true;
-
-			if (tc_waiting_count == tc_waiting_capacity) {
-				tc_waiting_capacity = tc_waiting_capacity ? tc_waiting_capacity * 2 : 64;
-				tc_waiting = perealloc(tc_waiting, tc_waiting_capacity * sizeof(tc_file *), 1);
-			}
-
-			tc_waiting[tc_waiting_count++] = file;
-		}
-	} else {
-		probe->state = TC_STRAY;
-		tc_refs_push(&tc_strays, unit, number - 1);
-	}
+	tc_record(unit, number - 1);
 
 	return ZEND_USER_OPCODE_CONTINUE;
 }
@@ -468,6 +476,38 @@ static void tc_process_class(zend_class_entry *ce)
 	}
 }
 
+/*
+ * ZEND_INCLUDE_OR_EVAL does not execute a file that has only the final "return" opcode, which is the case for a file with declarations only.
+ * It does this only with the stock zend_execute_ex. PCOV replaces zend_execute_ex, thus PCOV sees that opcode run and reports the file.
+ */
+static void tc_record_skipped_return(zend_op_array *op_array)
+{
+	zend_execute_data *caller = EG(current_execute_data);
+	tc_unit *unit = op_array->reserved[tc_slot];
+	uint32_t number;
+
+	if ((uintptr_t) unit <= (uintptr_t) TC_NO_PROBES
+		|| op_array->last != 1
+		|| op_array->opcodes[0].opcode != ZEND_RETURN
+		|| op_array->opcodes[0].op1_type != IS_CONST
+		|| zend_execute_ex != execute_ex) {
+		return;
+	}
+
+	if (!caller || !caller->func || !ZEND_USER_CODE(caller->func->type) || !caller->opline || caller->opline->opcode != ZEND_INCLUDE_OR_EVAL) {
+		return;
+	}
+
+	number = unit->index[0];
+
+	if (number == 0 || unit->probes[number - 1].state != TC_ARMED) {
+		return;
+	}
+
+	op_array->opcodes[0].handler = unit->probes[number - 1].handler;
+	tc_record(unit, number - 1);
+}
+
 static void tc_after_compile(zend_op_array *main_op_array, uint32_t first_function, uint32_t first_class)
 {
 	zend_function *function;
@@ -494,6 +534,10 @@ static void tc_after_compile(zend_op_array *main_op_array, uint32_t first_functi
 	} ZEND_HASH_FOREACH_END();
 
 	tc_register_handlers();
+
+	if (main_op_array) {
+		tc_record_skipped_return(main_op_array);
+	}
 }
 
 static zend_op_array *tc_compile_file(zend_file_handle *file_handle, int type)
