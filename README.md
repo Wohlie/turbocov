@@ -93,7 +93,7 @@ The extension then registers as `pcov`. The functions are `\pcov\start()` and so
 - OPcache optimizer: the optimizer can remove code, and a line without code is not executable. PCOV has the same behavior. Set `opcache.optimization_level=0` for line data that does not depend on the optimizer.
 - Other extensions that replace the instruction loop (PCOV, phpdbg) make turbocov slow. The results stay correct.
 - Xdebug: not tested together.
-- No hit counts, no branch coverage, no path coverage.
+- No branch coverage, no path coverage, no detection of dead code.
 - `clear(true)` does not drop the file list. The argument has no effect.
 
 ## Development
