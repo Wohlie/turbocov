@@ -22,7 +22,7 @@ mkdir -p "$root/$out"
 docker run --rm --memory 2g --memory-swap 2g -u "$(id -u):$(id -g)" -e "RUN_TESTS=${RUN_TESTS:-0}" -v "$root:/src" "php:$version-cli" sh -euc "
     mkdir /tmp/build
     cd /src
-    cp -r config.m4 php_turbocov.h turbocov.c tests /tmp/build/
+    cp -r config.m4 php_turbocov.h src tests /tmp/build/
     cd /tmp/build
     phpize > /dev/null
     ./configure $flags > /dev/null

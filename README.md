@@ -204,6 +204,19 @@ dev/compare-with-pcov.sh 8.5 path/File.php   # compare the line data with PCOV
 dev/bench.sh 8.5                             # compare the speed with plain PHP and PCOV
 ```
 
+The source is in `src/`:
+
+| File | Content |
+|---|---|
+| `turbocov.c` | The module: settings, startup and shutdown |
+| `compiler.c` | The compile hooks and the installation of probes |
+| `probes.c` | The probe handler and the lists of fired probes |
+| `paths.c` | The settings that select the files |
+| `conflicts.c` | The setups in which probes cannot work |
+| `api_native.c` | The functions for PHP code |
+| `api_pcov.c` | The functions of PCOV, for the build with the name `pcov` |
+| `debug.c` | `get_debug_info()` and `get_status()` |
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

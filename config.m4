@@ -8,9 +8,16 @@ PHP_ARG_ENABLE([turbocov-impersonate-pcov],
   [no], [no])
 
 if test "$PHP_TURBOCOV" != "no"; then
+  turbocov_api="src/api_native.c"
+
   if test "$PHP_TURBOCOV_IMPERSONATE_PCOV" != "no"; then
     AC_DEFINE([TURBOCOV_IMPERSONATE_PCOV], [1], [Define to 1 to register turbocov under the name pcov.])
+    turbocov_api="src/api_pcov.c"
   fi
 
-  PHP_NEW_EXTENSION([turbocov], [turbocov.c], [$ext_shared])
+  PHP_NEW_EXTENSION([turbocov],
+    [src/turbocov.c src/compiler.c src/probes.c src/paths.c src/conflicts.c src/debug.c $turbocov_api],
+    [$ext_shared])
+  PHP_ADD_BUILD_DIR([$ext_builddir/src])
+  PHP_ADD_INCLUDE([$ext_srcdir])
 fi

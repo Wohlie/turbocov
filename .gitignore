@@ -1,6 +1,7 @@
 /build/
 /.deps
-/.libs/
+.libs/
+.dirstamp
 /Makefile*
 /acinclude.m4
 /aclocal.m4
