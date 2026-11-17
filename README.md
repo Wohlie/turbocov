@@ -91,16 +91,15 @@ php -d turbocov.collect_paths=@changed.txt vendor/bin/phpunit
 \turbocov\get_executable_lines(      // file => line => -1 for each executable line of the given files
     ['/absolute/path/File.php'],
 );
-\turbocov\get_skip_reason(           // null, or the reason why this file has no data
+\turbocov\get_debug_info();          // the state of the extension, for a person
+\turbocov\get_debug_info(            // the state of one file, for a person
     '/absolute/path/File.php',
 );
-\turbocov\get_stats();               // counters for diagnosis
 ```
 
 - `stop()` returns only the lines that ran. It also arms the probes again, so the next `start()` begins with no data.
 - A file that PHP loaded during the collection is in the result of `stop()`, also when none of its lines ran.
-- `get_executable_lines()` knows only the files that PHP compiled and that are in `turbocov.collect_paths`. Other files are not in the result. `get_skip_reason()` gives the reason for one file.
-- The reasons are text for a person. Do not compare them in code.
+- `get_executable_lines()` knows only the files that PHP compiled and that are in `turbocov.collect_paths`. Other files are not in the result.
 
 A coverage tool needs the lines that did not run only once for each file:
 
@@ -113,6 +112,44 @@ foreach (\turbocov\get_executable_lines(array_keys($newFiles)) as $file => $line
     $seenFiles[$file] = true;
 }
 ```
+
+### Debug data
+
+`get_debug_info()` is for a person who looks for the cause of a result. Its format can change in each version. Do not use it in a tool.
+
+Without an argument it returns the state of the extension:
+
+```php
+[
+    'disabled_reason'  => null,   // as get_disabled_reason()
+    'collecting'       => true,   // true between start() and stop()
+    'collected_files'  => 250,    // files that have probes
+    'installed_probes' => 11189,  // since the start of the process
+    'fired_probes'     => 275,    // since the start of the process
+]
+```
+
+With a file it returns the probes of that file:
+
+```php
+[
+    'skip_reason'      => null,   // or the reason why the file has no data
+    'executable_lines' => [5, 6, 9],
+    'units'            => [       // one for each function, method and closure
+        [
+            'name'   => 'Foo::bar',
+            'probes' => [
+                ['line' => 5, 'opnum' => 1, 'opcode' => 'ZEND_IS_SMALLER', 'state' => 'fired'],
+                ['line' => 6, 'opnum' => 3, 'opcode' => 'ZEND_RETURN', 'state' => 'armed'],
+            ],
+        ],
+    ],
+]
+```
+
+- `skip_reason` tells if the file is not in `turbocov.collect_paths`, if an exclude setting has it, or if PHP did not compile it.
+- `state` is `armed`, `fired` or `fired while the collection was off`.
+- The code of a file outside of all functions has the name `{main}`. PHP destroys that code after it ran, so it is usually not in the list.
 
 ## Use with PHPUnit
 

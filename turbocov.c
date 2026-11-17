@@ -779,30 +779,233 @@ PHP_NAMED_FUNCTION(tc_function_start)
 }
 /* }}} */
 
-/* {{{ array get_stats() */
-PHP_NAMED_FUNCTION(tc_function_stats)
+/* Returns the reason why the file has no data, or NULL. The caller releases the string. */
+static zend_string *tc_skip_reason(zend_string *filename)
 {
-	zval *known;
-	zend_long files = 0;
-
-	ZEND_PARSE_PARAMETERS_NONE();
-
-	if (tc_active) {
-		ZEND_HASH_MAP_FOREACH_VAL(&tc_files, known) {
-			if (Z_PTR_P(known)) {
-				files++;
-			}
-		} ZEND_HASH_FOREACH_END();
+	if (*tc_off_reason) {
+		return zend_string_init(tc_off_reason, strlen(tc_off_reason), 0);
 	}
 
+	if (!tc_paths_find(&tc_collect_paths, filename)) {
+		return zend_string_init(ZEND_STRL(TC_INI_COLLECT_PATHS " does not have this file"), 0);
+	}
+
+#ifdef TC_INI_EXCLUDE_PATHS
+	{
+		zend_string *entry = tc_paths_find(&tc_exclude_paths, filename);
+
+		if (entry) {
+			return zend_strpprintf(0, TC_INI_EXCLUDE_PATHS " has %s", ZSTR_VAL(entry));
+		}
+	}
+#endif
+
+	if (tc_exclude_pattern && tc_matches_exclude_pattern(filename)) {
+		return zend_string_init(ZEND_STRL(TC_INI_EXCLUDE_PATTERN " matches this file"), 0);
+	}
+
+	if (!zend_hash_exists(&tc_files, filename)) {
+		return zend_string_init(ZEND_STRL("PHP did not compile this file"), 0);
+	}
+
+	return NULL;
+}
+
+static void tc_debug_add_unit(zval *units, tc_unit *unit, zend_op_array *op_array)
+{
+	static const char *states[] = {"armed", "fired", "fired while the collection was off"};
+	zval entry;
+	zval probes;
+
+	array_init(&entry);
+	array_init(&probes);
+
+	if (!op_array || !op_array->function_name) {
+		add_assoc_string(&entry, "name", "{main}");
+	} else if (op_array->scope) {
+		add_assoc_str(&entry, "name", zend_strpprintf(0, "%s::%s", ZSTR_VAL(op_array->scope->name), ZSTR_VAL(op_array->function_name)));
+	} else {
+		add_assoc_str(&entry, "name", zend_string_copy(op_array->function_name));
+	}
+
+	for (uint32_t i = 0; i < unit->count; i++) {
+		tc_probe *probe = &unit->probes[i];
+		zval item;
+
+		array_init(&item);
+		add_assoc_long(&item, "line", probe->line);
+		add_assoc_long(&item, "opnum", probe->opnum);
+		add_assoc_string(&item, "opcode", zend_get_opcode_name(unit->opcodes[probe->opnum].opcode));
+		add_assoc_string(&item, "state", states[probe->state]);
+		add_next_index_zval(&probes, &item);
+	}
+
+	add_assoc_zval(&entry, "probes", &probes);
+	add_next_index_zval(units, &entry);
+}
+
+/* A unit does not keep the name of its function. This function finds the name in the tables of the engine. */
+static void tc_debug_visit(zval *units, HashTable *seen, tc_file *file, zend_op_array *op_array)
+{
+	zend_ulong key;
+	tc_unit *unit;
+
+	if (!ZEND_USER_CODE(op_array->type) || !op_array->opcodes) {
+		return;
+	}
+
+	key = (zend_ulong) (uintptr_t) op_array->opcodes;
+	unit = zend_hash_index_find_ptr(&tc_units, key);
+
+	if (unit && unit->file == file && !zend_hash_index_exists(seen, key)) {
+		zend_hash_index_add_empty_element(seen, key);
+		tc_debug_add_unit(units, unit, op_array);
+	}
+
+	for (uint32_t i = 0; i < op_array->num_dynamic_func_defs; i++) {
+		tc_debug_visit(units, seen, file, op_array->dynamic_func_defs[i]);
+	}
+}
+
+static void tc_debug_units(zval *units, tc_file *file)
+{
+	HashTable seen;
+	zend_function *function;
+	zend_class_entry *ce;
+	zend_ulong key;
+	tc_unit *unit;
+
+	zend_hash_init(&seen, 16, NULL, NULL, 0);
+
+	ZEND_HASH_MAP_FOREACH_PTR(EG(function_table), function) {
+		tc_debug_visit(units, &seen, file, &function->op_array);
+	} ZEND_HASH_FOREACH_END();
+
+	ZEND_HASH_MAP_FOREACH_PTR(EG(class_table), ce) {
+		if (ce->type != ZEND_USER_CLASS) {
+			continue;
+		}
+
+		ZEND_HASH_MAP_FOREACH_PTR(&ce->function_table, function) {
+			tc_debug_visit(units, &seen, file, &function->op_array);
+		} ZEND_HASH_FOREACH_END();
+
+		if (ce->num_hooked_props) {
+			zend_property_info *property;
+
+			ZEND_HASH_MAP_FOREACH_PTR(&ce->properties_info, property) {
+				if (property->hooks) {
+					for (uint32_t i = 0; i < ZEND_PROPERTY_HOOK_COUNT; i++) {
+						if (property->hooks[i]) {
+							tc_debug_visit(units, &seen, file, &property->hooks[i]->op_array);
+						}
+					}
+				}
+			} ZEND_HASH_FOREACH_END();
+		}
+	} ZEND_HASH_FOREACH_END();
+
+	/* The code of a file outside of all functions, and the closures in it, are in no table. */
+	ZEND_HASH_FOREACH_NUM_KEY_PTR(&tc_units, key, unit) {
+		if (unit->file == file && unit->opcodes && !zend_hash_index_exists(&seen, key)) {
+			tc_debug_add_unit(units, unit, NULL);
+		}
+	} ZEND_HASH_FOREACH_END();
+
+	zend_hash_destroy(&seen);
+}
+
+static int tc_compare_lines(const void *left, const void *right)
+{
+	zend_ulong a = *(const zend_ulong *) left;
+	zend_ulong b = *(const zend_ulong *) right;
+
+	return a < b ? -1 : (a > b ? 1 : 0);
+}
+
+/* {{{ array get_debug_info(?string $file = null) */
+PHP_NAMED_FUNCTION(tc_function_get_debug_info)
+{
+	zend_string *filename = NULL;
+	zend_string *reason;
+	zval *known;
+	zval lines;
+	zval units;
+
+	ZEND_PARSE_PARAMETERS_START(0, 1)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_STR_OR_NULL(filename)
+	ZEND_PARSE_PARAMETERS_END();
+
 	array_init(return_value);
-	add_assoc_long(return_value, "files", files);
-	add_assoc_long(return_value, "probes", (zend_long) tc_stat_probes);
-	add_assoc_long(return_value, "fires", (zend_long) tc_stat_fires);
-	add_assoc_long(return_value, "hits", (zend_long) tc_hits.count);
-	add_assoc_long(return_value, "strays", (zend_long) tc_strays.count);
+
+	if (!filename) {
+		zend_long files = 0;
+
+		if (tc_active) {
+			ZEND_HASH_MAP_FOREACH_VAL(&tc_files, known) {
+				if (Z_PTR_P(known)) {
+					files++;
+				}
+			} ZEND_HASH_FOREACH_END();
+		}
+
+		if (*tc_off_reason) {
+			add_assoc_string(return_value, "disabled_reason", tc_off_reason);
+		} else {
+			add_assoc_null(return_value, "disabled_reason");
+		}
+
+		add_assoc_bool(return_value, "collecting", tc_collecting);
+		add_assoc_long(return_value, "collected_files", files);
+		add_assoc_long(return_value, "installed_probes", (zend_long) tc_stat_probes);
+		add_assoc_long(return_value, "fired_probes", (zend_long) tc_stat_fires);
+
+		return;
+	}
+
+	array_init(&lines);
+	array_init(&units);
+
+	if (!tc_active) {
+		add_assoc_string(return_value, "skip_reason", tc_off_reason);
+	} else {
+		reason = tc_skip_reason(filename);
+
+		if (reason) {
+			add_assoc_str(return_value, "skip_reason", reason);
+		} else {
+			tc_file *file = Z_PTR_P(zend_hash_find(&tc_files, filename));
+			uint32_t count = zend_hash_num_elements(&file->lines);
+			zend_ulong *sorted = safe_emalloc(count ? count : 1, sizeof(zend_ulong), 0);
+			zend_ulong line;
+			uint32_t next = 0;
+
+			add_assoc_null(return_value, "skip_reason");
+
+			ZEND_HASH_FOREACH_NUM_KEY(&file->lines, line) {
+				sorted[next++] = line;
+			} ZEND_HASH_FOREACH_END();
+
+			qsort(sorted, count, sizeof(zend_ulong), tc_compare_lines);
+
+			for (uint32_t i = 0; i < count; i++) {
+				add_next_index_long(&lines, (zend_long) sorted[i]);
+			}
+
+			efree(sorted);
+			tc_debug_units(&units, file);
+		}
+	}
+
+	add_assoc_zval(return_value, "executable_lines", &lines);
+	add_assoc_zval(return_value, "units", &units);
 }
 /* }}} */
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_get_debug_info, 0, 0, IS_ARRAY, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, file, IS_STRING, 1, "null")
+ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_void, 0, 0, IS_VOID, 0)
 ZEND_END_ARG_INFO()
@@ -963,7 +1166,7 @@ static const zend_function_entry tc_functions[] = {
 	ZEND_NS_FENTRY(TURBOCOV_NAME, clear, tc_function_clear, tc_arginfo_clear, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, waiting, tc_function_waiting, tc_arginfo_array, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, memory, tc_function_memory, tc_arginfo_int, 0)
-	ZEND_NS_FENTRY(TURBOCOV_NAME, get_stats, tc_function_stats, tc_arginfo_array, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, get_debug_info, tc_function_get_debug_info, tc_arginfo_get_debug_info, 0)
 	PHP_FE_END
 };
 
@@ -1049,42 +1252,6 @@ PHP_NAMED_FUNCTION(tc_function_get_disabled_reason)
 }
 /* }}} */
 
-/* {{{ ?string get_skip_reason(string $file) */
-PHP_NAMED_FUNCTION(tc_function_get_skip_reason)
-{
-	zend_string *filename;
-	zend_string *entry;
-
-	ZEND_PARSE_PARAMETERS_START(1, 1)
-		Z_PARAM_STR(filename)
-	ZEND_PARSE_PARAMETERS_END();
-
-	if (*tc_off_reason) {
-		RETURN_STRING(tc_off_reason);
-	}
-
-	if (!tc_paths_find(&tc_collect_paths, filename)) {
-		RETURN_STRING(TC_INI_COLLECT_PATHS " does not have this file");
-	}
-
-	entry = tc_paths_find(&tc_exclude_paths, filename);
-
-	if (entry) {
-		RETURN_NEW_STR(zend_strpprintf(0, TC_INI_EXCLUDE_PATHS " has %s", ZSTR_VAL(entry)));
-	}
-
-	if (tc_exclude_pattern && tc_matches_exclude_pattern(filename)) {
-		RETURN_STRING(TC_INI_EXCLUDE_PATTERN " matches this file");
-	}
-
-	if (!zend_hash_exists(&tc_files, filename)) {
-		RETURN_STRING("PHP did not compile this file");
-	}
-
-	RETURN_NULL();
-}
-/* }}} */
-
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_get_executable_lines, 0, 1, IS_ARRAY, 0)
 	ZEND_ARG_TYPE_INFO(0, files, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
@@ -1092,17 +1259,13 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_get_disabled_reason, 0, 0, IS_STRING, 1)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_get_skip_reason, 0, 1, IS_STRING, 1)
-	ZEND_ARG_TYPE_INFO(0, file, IS_STRING, 0)
-ZEND_END_ARG_INFO()
 
 static const zend_function_entry tc_functions[] = {
 	ZEND_NS_FENTRY(TURBOCOV_NAME, start, tc_function_start, tc_arginfo_void, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, stop, tc_function_stop, tc_arginfo_array, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, get_executable_lines, tc_function_get_executable_lines, tc_arginfo_get_executable_lines, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, get_disabled_reason, tc_function_get_disabled_reason, tc_arginfo_get_disabled_reason, 0)
-	ZEND_NS_FENTRY(TURBOCOV_NAME, get_skip_reason, tc_function_get_skip_reason, tc_arginfo_get_skip_reason, 0)
-	ZEND_NS_FENTRY(TURBOCOV_NAME, get_stats, tc_function_stats, tc_arginfo_array, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, get_debug_info, tc_function_get_debug_info, tc_arginfo_get_debug_info, 0)
 	PHP_FE_END
 };
 

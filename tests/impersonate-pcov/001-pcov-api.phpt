@@ -42,7 +42,7 @@ bool(false)
 int(0)
 int(1)
 int(2)
-pcov\clear,pcov\collect,pcov\get_stats,pcov\memory,pcov\start,pcov\stop,pcov\waiting
+pcov\clear,pcov\collect,pcov\get_debug_info,pcov\memory,pcov\start,pcov\stop,pcov\waiting
 bool(true)
 {"5":1,"6":-1,"9":1,"14":1,"16":1,"17":1,"20":1,"25":-1,"27":-1}
 second collect: []

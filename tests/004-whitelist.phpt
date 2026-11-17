@@ -12,7 +12,7 @@ require __DIR__ . '/fixtures/functions.php';
 require __DIR__ . '/fixtures/basic.php';
 second(2);
 echo json_encode(array_map('basename', array_keys(\turbocov\stop()))), "\n";
-echo \turbocov\get_stats()['files'], "\n";
+echo \turbocov\get_debug_info()['collected_files'], "\n";
 ?>
 --EXPECT--
 5

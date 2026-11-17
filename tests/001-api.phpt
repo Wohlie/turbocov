@@ -20,10 +20,9 @@ try {
 --EXPECT--
 bool(true)
 bool(true)
+turbocov\get_debug_info
 turbocov\get_disabled_reason
 turbocov\get_executable_lines
-turbocov\get_skip_reason
-turbocov\get_stats
 turbocov\start
 turbocov\stop
 turbocov\get_executable_lines(): Argument #1 ($files) must be of type array, string given

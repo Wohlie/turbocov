@@ -11,7 +11,7 @@ require __DIR__ . "/fixtures/functions.php";
 require __DIR__ . "/fixtures/basic.php";
 second(2);
 echo json_encode(array_map("basename", array_keys(\turbocov\stop()))), "\n";
-echo \turbocov\get_skip_reason(__DIR__ . "/fixtures/functions.php"), "\n";
+echo \turbocov\get_debug_info(__DIR__ . "/fixtures/functions.php")["skip_reason"], "\n";
 ?>
 --EXPECTF--
 
