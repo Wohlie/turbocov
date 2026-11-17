@@ -24,9 +24,11 @@
 # error "turbocov does not support thread-safe PHP"
 #endif
 
-#define TC_FILTER_ALL     0
-#define TC_FILTER_INCLUDE 1
-#define TC_FILTER_EXCLUDE 2
+#ifdef TURBOCOV_IMPERSONATE_PCOV
+# define TC_FILTER_ALL     0
+# define TC_FILTER_INCLUDE 1
+# define TC_FILTER_EXCLUDE 2
+#endif
 
 #define TC_UNCOVERED -1
 #define TC_COVERED    1
@@ -89,7 +91,8 @@ typedef struct _tc_paths {
 } tc_paths;
 
 static bool tc_ini_enabled;
-static char tc_start_warning[MAXPATHLEN + 128]; /* the reason why the collection is off, for the next start() */
+static char tc_off_reason[MAXPATHLEN + 128]; /* why the collection is off, or an empty string */
+static bool tc_off_warned;
 static bool tc_active;
 static bool tc_collecting;
 static bool tc_dirty;
@@ -721,14 +724,14 @@ static void tc_setup_paths(void)
 	tc_paths_init(&tc_exclude_paths);
 
 	if (!collect || !*collect) {
-		snprintf(tc_start_warning, sizeof(tc_start_warning), TC_INI_COLLECT_PATHS " is not set");
+		snprintf(tc_off_reason, sizeof(tc_off_reason), TC_INI_COLLECT_PATHS " is not set");
 	} else if (!tc_paths_load(&tc_collect_paths, collect)) {
-		snprintf(tc_start_warning, sizeof(tc_start_warning), "the list file %s of " TC_INI_COLLECT_PATHS " is not readable", collect + 1);
+		snprintf(tc_off_reason, sizeof(tc_off_reason), "the list file %s of " TC_INI_COLLECT_PATHS " is not readable", collect + 1);
 	}
 
 #ifdef TC_INI_EXCLUDE_PATHS
 	if (!tc_paths_load(&tc_exclude_paths, INI_STR(TC_INI_EXCLUDE_PATHS))) {
-		snprintf(tc_start_warning, sizeof(tc_start_warning), "the list file %s of " TC_INI_EXCLUDE_PATHS " is not readable", INI_STR(TC_INI_EXCLUDE_PATHS) + 1);
+		snprintf(tc_off_reason, sizeof(tc_off_reason), "the list file %s of " TC_INI_EXCLUDE_PATHS " is not readable", INI_STR(TC_INI_EXCLUDE_PATHS) + 1);
 		zend_hash_clean(&tc_collect_paths.files);
 		zend_hash_clean(&tc_collect_paths.directories);
 	}
@@ -755,6 +758,60 @@ static void tc_setup_exclude_pattern(void)
 
 	zend_string_release(pattern);
 }
+
+/* {{{ void start() */
+PHP_NAMED_FUNCTION(tc_function_start)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	if (*tc_off_reason && !tc_off_warned) {
+		tc_off_warned = true;
+		zend_error(E_WARNING, TURBOCOV_NAME ": the coverage collection is off, because %s", tc_off_reason);
+	}
+
+	if (!tc_active) {
+		return;
+	}
+
+	tc_refs_rearm(&tc_strays);
+	tc_collecting = true;
+}
+/* }}} */
+
+/* {{{ array stats() */
+PHP_NAMED_FUNCTION(tc_function_stats)
+{
+	zval *known;
+	zend_long files = 0;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	if (tc_active) {
+		ZEND_HASH_MAP_FOREACH_VAL(&tc_files, known) {
+			if (Z_PTR_P(known)) {
+				files++;
+			}
+		} ZEND_HASH_FOREACH_END();
+	}
+
+	array_init(return_value);
+	add_assoc_long(return_value, "files", files);
+	add_assoc_long(return_value, "probes", (zend_long) tc_stat_probes);
+	add_assoc_long(return_value, "fires", (zend_long) tc_stat_fires);
+	add_assoc_long(return_value, "hits", (zend_long) tc_hits.count);
+	add_assoc_long(return_value, "strays", (zend_long) tc_strays.count);
+}
+/* }}} */
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_void, 0, 0, IS_VOID, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_array, 0, 0, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+#ifdef TURBOCOV_IMPERSONATE_PCOV
+
+/* The functions of PCOV, for the tools that only know PCOV. */
 
 static void tc_add_file(zval *result, tc_file *file)
 {
@@ -835,25 +892,6 @@ PHP_NAMED_FUNCTION(tc_function_collect)
 }
 /* }}} */
 
-/* {{{ void start() */
-PHP_NAMED_FUNCTION(tc_function_start)
-{
-	ZEND_PARSE_PARAMETERS_NONE();
-
-	if (*tc_start_warning) {
-		zend_error(E_WARNING, TURBOCOV_NAME ": the coverage collection is off, because %s", tc_start_warning);
-		*tc_start_warning = '\0';
-	}
-
-	if (!tc_active) {
-		return;
-	}
-
-	tc_refs_rearm(&tc_strays);
-	tc_collecting = true;
-}
-/* }}} */
-
 /* {{{ void stop() */
 PHP_NAMED_FUNCTION(tc_function_stop)
 {
@@ -905,40 +943,6 @@ PHP_NAMED_FUNCTION(tc_function_memory)
 }
 /* }}} */
 
-/* {{{ bool enabled() */
-PHP_NAMED_FUNCTION(tc_function_enabled)
-{
-	ZEND_PARSE_PARAMETERS_NONE();
-
-	RETURN_BOOL(tc_ini_enabled);
-}
-/* }}} */
-
-/* {{{ array stats() */
-PHP_NAMED_FUNCTION(tc_function_stats)
-{
-	zval *known;
-	zend_long files = 0;
-
-	ZEND_PARSE_PARAMETERS_NONE();
-
-	if (tc_active) {
-		ZEND_HASH_MAP_FOREACH_VAL(&tc_files, known) {
-			if (Z_PTR_P(known)) {
-				files++;
-			}
-		} ZEND_HASH_FOREACH_END();
-	}
-
-	array_init(return_value);
-	add_assoc_long(return_value, "files", files);
-	add_assoc_long(return_value, "probes", (zend_long) tc_stat_probes);
-	add_assoc_long(return_value, "fires", (zend_long) tc_stat_fires);
-	add_assoc_long(return_value, "hits", (zend_long) tc_hits.count);
-	add_assoc_long(return_value, "strays", (zend_long) tc_strays.count);
-}
-/* }}} */
-
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_collect, 0, 0, IS_ARRAY, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, type, IS_LONG, 0, "0")
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, filter, IS_ARRAY, 0, "[]")
@@ -948,16 +952,7 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_clear, 0, 0, IS_VOID, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, files, _IS_BOOL, 0, "false")
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_void, 0, 0, IS_VOID, 0)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_array, 0, 0, IS_ARRAY, 0)
-ZEND_END_ARG_INFO()
-
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_int, 0, 0, IS_LONG, 0)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_bool, 0, 0, _IS_BOOL, 0)
 ZEND_END_ARG_INFO()
 
 static const zend_function_entry tc_functions[] = {
@@ -967,10 +962,109 @@ static const zend_function_entry tc_functions[] = {
 	ZEND_NS_FENTRY(TURBOCOV_NAME, clear, tc_function_clear, tc_arginfo_clear, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, waiting, tc_function_waiting, tc_arginfo_array, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, memory, tc_function_memory, tc_arginfo_int, 0)
-	ZEND_NS_FENTRY(TURBOCOV_NAME, enabled, tc_function_enabled, tc_arginfo_bool, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, stats, tc_function_stats, tc_arginfo_array, 0)
 	PHP_FE_END
 };
+
+#else
+
+/* {{{ array stop() */
+PHP_NAMED_FUNCTION(tc_function_stop)
+{
+	zval covered;
+
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	tc_collecting = false;
+	array_init(return_value);
+
+	if (!tc_active) {
+		return;
+	}
+
+	for (size_t i = 0; i < tc_waiting_count; i++) {
+		zval lines;
+
+		array_init(&lines);
+		zend_hash_update(Z_ARRVAL_P(return_value), tc_waiting[i]->name, &lines);
+	}
+
+	ZVAL_LONG(&covered, TC_COVERED);
+
+	for (size_t i = 0; i < tc_hits.count; i++) {
+		tc_unit *unit = tc_hits.refs[i].unit;
+		zval *lines = zend_hash_find(Z_ARRVAL_P(return_value), unit->file->name);
+
+		if (lines) {
+			zend_hash_index_update(Z_ARRVAL_P(lines), unit->probes[tc_hits.refs[i].probe].line, &covered);
+		}
+	}
+
+	tc_refs_rearm(&tc_hits);
+	tc_waiting_reset();
+	tc_dirty = false;
+}
+/* }}} */
+
+/* {{{ array executable_lines(array $files) */
+PHP_NAMED_FUNCTION(tc_function_executable_lines)
+{
+	HashTable *files;
+	zval *entry;
+	zval *known;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_ARRAY_HT(files)
+	ZEND_PARSE_PARAMETERS_END();
+
+	array_init(return_value);
+
+	if (!tc_active) {
+		return;
+	}
+
+	ZEND_HASH_FOREACH_VAL(files, entry) {
+		if (Z_TYPE_P(entry) == IS_STRING && (known = zend_hash_find(&tc_files, Z_STR_P(entry))) && Z_PTR_P(known)) {
+			tc_file *file = Z_PTR_P(known);
+			zval lines;
+
+			ZVAL_ARR(&lines, zend_array_dup(&file->lines));
+			zend_hash_update(Z_ARRVAL_P(return_value), file->name, &lines);
+		}
+	} ZEND_HASH_FOREACH_END();
+}
+/* }}} */
+
+/* {{{ ?string status() */
+PHP_NAMED_FUNCTION(tc_function_status)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	if (*tc_off_reason) {
+		RETURN_STRING(tc_off_reason);
+	}
+
+	RETURN_NULL();
+}
+/* }}} */
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_executable_lines, 0, 1, IS_ARRAY, 0)
+	ZEND_ARG_TYPE_INFO(0, files, IS_ARRAY, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_status, 0, 0, IS_STRING, 1)
+ZEND_END_ARG_INFO()
+
+static const zend_function_entry tc_functions[] = {
+	ZEND_NS_FENTRY(TURBOCOV_NAME, start, tc_function_start, tc_arginfo_void, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, stop, tc_function_stop, tc_arginfo_array, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, executable_lines, tc_function_executable_lines, tc_arginfo_executable_lines, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, status, tc_function_status, tc_arginfo_status, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, stats, tc_function_stats, tc_arginfo_array, 0)
+	PHP_FE_END
+};
+
+#endif
 
 static void tc_fill_ignored_opcodes(void)
 {
@@ -990,16 +1084,22 @@ static void tc_fill_ignored_opcodes(void)
 
 static PHP_MINIT_FUNCTION(turbocov)
 {
+#ifdef TURBOCOV_IMPERSONATE_PCOV
 	REGISTER_NS_LONG_CONSTANT(TURBOCOV_NAME, "all", TC_FILTER_ALL, CONST_CS | CONST_PERSISTENT);
 	REGISTER_NS_LONG_CONSTANT(TURBOCOV_NAME, "inclusive", TC_FILTER_INCLUDE, CONST_CS | CONST_PERSISTENT);
 	REGISTER_NS_LONG_CONSTANT(TURBOCOV_NAME, "exclusive", TC_FILTER_EXCLUDE, CONST_CS | CONST_PERSISTENT);
 	REGISTER_NS_STRING_CONSTANT(TURBOCOV_NAME, "version", PHP_TURBOCOV_VERSION, CONST_CS | CONST_PERSISTENT);
+#endif
 
 	REGISTER_INI_ENTRIES();
 
 	tc_ini_enabled = INI_BOOL(TURBOCOV_NAME ".enabled");
 
 	if (!tc_ini_enabled) {
+		/* The user turned the extension off. start() gives no warning for that. */
+		snprintf(tc_off_reason, sizeof(tc_off_reason), TURBOCOV_NAME ".enabled is 0");
+		tc_off_warned = true;
+
 		return SUCCESS;
 	}
 
@@ -1007,6 +1107,8 @@ static PHP_MINIT_FUNCTION(turbocov)
 
 	if (tc_slot < 0) {
 		zend_error(E_CORE_WARNING, TURBOCOV_NAME ": no free op array slot, the extension is off");
+		snprintf(tc_off_reason, sizeof(tc_off_reason), "PHP has no free op array slot");
+		tc_off_warned = true;
 		tc_ini_enabled = false;
 
 		return SUCCESS;
@@ -1109,7 +1211,7 @@ static PHP_RINIT_FUNCTION(turbocov)
 
 		if (conflict) {
 			/* No message here: most processes do not collect coverage, and a message at startup can break their output. */
-			snprintf(tc_start_warning, sizeof(tc_start_warning), "%s", conflict);
+			snprintf(tc_off_reason, sizeof(tc_off_reason), "%s", conflict);
 			tc_ini_enabled = false;
 
 			return SUCCESS;
@@ -1121,7 +1223,8 @@ static PHP_RINIT_FUNCTION(turbocov)
 	zend_hash_init(&tc_files, 256, NULL, tc_files_dtor, 1);
 	zend_hash_init(&tc_units, 256, NULL, NULL, 1);
 
-	*tc_start_warning = '\0';
+	*tc_off_reason = '\0';
+	tc_off_warned = false;
 	tc_setup_paths();
 	tc_setup_exclude_pattern();
 

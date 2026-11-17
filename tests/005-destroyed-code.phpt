@@ -1,5 +1,5 @@
 --TEST--
-Code that the engine destroys before collect() keeps its lines
+Code that the engine destroys before stop() keeps its lines
 --EXTENSIONS--
 turbocov
 --INI--
@@ -18,25 +18,21 @@ for ($i = 0; $i < 1000; $i++) {
 
 eval('$a = 1;
 $b = 2;');
-\turbocov\stop();
 
 $total = 0;
 
-foreach (\turbocov\collect() as $name => $lines) {
+foreach (\turbocov\stop() as $name => $lines) {
     if (str_contains($name, "eval()'d code")) {
-        $total += count(array_filter($lines, static fn (int $status): bool => $status === 1));
+        $total += count($lines);
     }
 }
 
 var_dump($total > 0);
-\turbocov\clear();
 
 for ($run = 0; $run < 100; $run++) {
     \turbocov\start();
     eval('$c = ' . $run . ';');
     \turbocov\stop();
-    \turbocov\collect();
-    \turbocov\clear();
 }
 
 echo "done\n";

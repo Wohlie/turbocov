@@ -11,14 +11,10 @@ turbocov.exclude_pattern=~/functions[.]php~
 require __DIR__ . '/fixtures/functions.php';
 require __DIR__ . '/fixtures/basic.php';
 second(2);
-\turbocov\stop();
-
-echo json_encode(array_map('basename', \turbocov\waiting())), "\n";
-echo json_encode(array_map('basename', array_keys(\turbocov\collect()))), "\n";
+echo json_encode(array_map('basename', array_keys(\turbocov\stop()))), "\n";
 echo \turbocov\stats()['files'], "\n";
 ?>
 --EXPECT--
 5
-["basic.php"]
 ["basic.php"]
 1

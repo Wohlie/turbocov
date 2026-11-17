@@ -1,5 +1,5 @@
 --TEST--
-start(), stop() and clear() give each run its own data
+Each start() and stop() pair has its own data
 --EXTENSIONS--
 turbocov
 --INI--
@@ -9,56 +9,44 @@ turbocov.collect_paths={PWD}/fixtures
 $file = __DIR__ . '/fixtures/functions.php';
 require $file;
 
-function covered(string $file): string
+function covered(array $executed, string $file): string
 {
-    $lines = \turbocov\collect(\turbocov\inclusive, [$file])[$file] ?? [];
-    $covered = array_keys(array_filter($lines, static fn (int $status): bool => $status === 1));
+    $covered = array_keys($executed[$file] ?? []);
     sort($covered);
 
     return implode(',', $covered);
 }
 
-echo "nothing ran: ", json_encode(\turbocov\collect()), "\n";
+echo "nothing ran: ", json_encode(\turbocov\stop()), "\n";
 
 \turbocov\start();
 first(1);
-\turbocov\stop();
-echo "first(1): ", covered($file), "\n";
-\turbocov\clear();
+echo "first(1): ", covered(\turbocov\stop(), $file), "\n";
 
 // This call runs outside of the collection. Its lines must be available to the next run.
 second(3);
 
 \turbocov\start();
 second(2);
-\turbocov\stop();
-echo "second(2): ", covered($file), "\n";
-\turbocov\clear();
+echo "second(2): ", covered(\turbocov\stop(), $file), "\n";
 
 \turbocov\start();
-\turbocov\stop();
-echo "empty run: ", json_encode(\turbocov\waiting()), " ", json_encode(\turbocov\collect()), "\n";
+echo "empty run: ", json_encode(\turbocov\stop()), "\n";
 
 \turbocov\start();
 first(20);
-\turbocov\stop();
-\turbocov\start();
-first(1);
-\turbocov\stop();
-echo "two runs, no clear: ", covered($file), "\n";
-echo "second collect: ", json_encode(\turbocov\collect()), "\n";
-\turbocov\clear();
+echo "first(20): ", covered(\turbocov\stop(), $file), "\n";
+echo "second stop: ", json_encode(\turbocov\stop()), "\n";
 
 \turbocov\start();
 first(20);
-\turbocov\stop();
-echo "after clear: ", covered($file), "\n";
+echo "first(20) again: ", covered(\turbocov\stop(), $file), "\n";
 ?>
 --EXPECT--
 nothing ran: []
 first(1): 5,9
 second(2): 5,9,14,16,17,20
-empty run: [] []
-two runs, no clear: 5,6,9
-second collect: []
-after clear: 5,6
+empty run: []
+first(20): 5,6
+second stop: []
+first(20) again: 5,6

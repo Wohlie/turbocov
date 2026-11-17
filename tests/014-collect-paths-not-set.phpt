@@ -10,9 +10,7 @@ turbocov.enabled=1
 require __DIR__ . "/fixtures/functions.php";
 require __DIR__ . "/fixtures/basic.php";
 second(2);
-\turbocov\stop();
-
-echo json_encode(array_map("basename", array_keys(\turbocov\collect()))), "\n";
+echo json_encode(array_map("basename", array_keys(\turbocov\stop()))), "\n";
 ?>
 --EXPECTF--
 

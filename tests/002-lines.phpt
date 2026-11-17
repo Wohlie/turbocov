@@ -1,5 +1,5 @@
 --TEST--
-collect() reports every executable line and marks the executed lines
+stop() returns the executed lines and executable_lines() returns every executable line
 --EXTENSIONS--
 turbocov
 --INI--
@@ -9,20 +9,25 @@ turbocov.collect_paths={PWD}/fixtures
 $file = __DIR__ . '/fixtures/functions.php';
 require $file;
 
+var_dump(\turbocov\status());
+
 \turbocov\start();
 second(2);
-\turbocov\stop();
+$executed = \turbocov\stop();
 
-var_dump(\turbocov\waiting() === [$file]);
+var_dump(array_keys($executed) === [$file]);
 
-$lines = \turbocov\collect(\turbocov\inclusive, [$file])[$file];
+$lines = array_replace(\turbocov\executable_lines([$file, __FILE__, 'missing.php'])[$file], $executed[$file]);
 ksort($lines);
 
 foreach ($lines as $line => $status) {
     echo $line, ' ', $status === 1 ? 'covered' : 'not covered', "\n";
 }
+
+echo json_encode(array_keys(\turbocov\executable_lines([$file, __FILE__, 'missing.php'])) === [$file]), "\n";
 ?>
 --EXPECT--
+NULL
 bool(true)
 5 covered
 6 not covered
@@ -33,3 +38,4 @@ bool(true)
 20 covered
 25 not covered
 27 not covered
+true

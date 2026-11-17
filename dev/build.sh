@@ -10,8 +10,11 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 out="build/php-$version/$name"
 flags="--enable-turbocov"
 
+tests="tests/*.phpt"
+
 if [ "$name" = "pcov" ]; then
     flags="$flags --enable-turbocov-impersonate-pcov"
+    tests="tests/impersonate-pcov"
 fi
 
 mkdir -p "$root/$out"
@@ -25,8 +28,8 @@ docker run --rm --memory 2g --memory-swap 2g -u "$(id -u):$(id -g)" -e "RUN_TEST
     ./configure $flags > /dev/null
     make -j\"\$(nproc)\" CFLAGS='-O2 -g -Wall -Wextra -Wno-unused-parameter' 2>&1 | grep -E 'warning|error' || true
     cp modules/turbocov.so /src/$out/turbocov.so
-    if [ \"\${RUN_TESTS:-0}\" = 1 ] && [ '$name' = turbocov ]; then
-        NO_INTERACTION=1 REPORT_EXIT_STATUS=1 make test TESTS='--show-diff tests'
+    if [ \"\${RUN_TESTS:-0}\" = 1 ]; then
+        NO_INTERACTION=1 REPORT_EXIT_STATUS=1 make test TESTS='--show-diff $tests'
     fi
 "
 

@@ -10,10 +10,16 @@ ob_start();
 (static function () use ($file): void {
     require $file;
 })();
-("\\$namespace\\stop")();
-ob_end_clean();
 
-$lines = ("\\$namespace\\collect")(constant("\\$namespace\\inclusive"), [$file])[$file] ?? null;
+if ($namespace === 'pcov') {
+    \pcov\stop();
+    $lines = \pcov\collect(\pcov\inclusive, [$file])[$file] ?? null;
+} else {
+    $executed = \turbocov\stop()[$file] ?? null;
+    $lines = $executed === null ? null : array_replace(\turbocov\executable_lines([$file])[$file], $executed);
+}
+
+ob_end_clean();
 
 if ($lines === null) {
     fwrite(STDERR, "No data for $file\n");

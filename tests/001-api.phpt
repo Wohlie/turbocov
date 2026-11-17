@@ -1,22 +1,18 @@
 --TEST--
-The extension registers its functions and constants
+The extension registers its functions
 --EXTENSIONS--
 turbocov
 --FILE--
 <?php
 var_dump(extension_loaded('turbocov'));
-var_dump(\turbocov\enabled());
-var_dump(\turbocov\all, \turbocov\inclusive, \turbocov\exclusive);
-var_dump(is_string(\turbocov\version));
+var_dump(is_string(phpversion('turbocov')));
 
-foreach (['start', 'stop', 'collect', 'clear', 'waiting', 'memory', 'enabled', 'stats'] as $function) {
-    if (!function_exists("turbocov\\$function")) {
-        echo "missing $function\n";
-    }
-}
+$functions = get_extension_funcs('turbocov');
+sort($functions);
+echo implode("\n", $functions), "\n";
 
 try {
-    \turbocov\collect(7);
+    \turbocov\executable_lines('file.php');
 } catch (TypeError $e) {
     echo $e->getMessage(), "\n";
 }
@@ -24,8 +20,9 @@ try {
 --EXPECT--
 bool(true)
 bool(true)
-int(0)
-int(1)
-int(2)
-bool(true)
-type must be \turbocov\inclusive, \turbocov\exclusive, or \turbocov\all
+turbocov\executable_lines
+turbocov\start
+turbocov\stats
+turbocov\status
+turbocov\stop
+turbocov\executable_lines(): Argument #1 ($files) must be of type array, string given

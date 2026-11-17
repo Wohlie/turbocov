@@ -1,7 +1,8 @@
 <?php declare(strict_types=1);
 
 // Runs the call sequence of a test runner (start, test, stop, waiting, collect, clear) and prints each result as JSON.
-// The first argument is the function namespace: pcov or turbocov.
+// The functions are the functions of PCOV. For turbocov, use the build with --enable-turbocov-impersonate-pcov.
+// The first argument is the function namespace: pcov.
 
 [, $namespace, $file] = $argv;
 $file = realpath($file);

@@ -15,17 +15,16 @@ opcache.protect_memory=1
 turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
-var_dump(\turbocov\enabled());
+var_dump(\turbocov\status());
 
 \turbocov\start();
 require __DIR__ . '/fixtures/functions.php';
 var_dump(second(2));
-\turbocov\stop();
-
-var_dump(\turbocov\collect());
+var_dump(\turbocov\stop());
+\turbocov\start();
 ?>
 --EXPECTF--
-bool(false)
+string(56) "opcache.protect_memory makes the compiled code read-only"
 
 Warning: %s: the coverage collection is off, because opcache.protect_memory makes the compiled code read-only in %s on line %d
 int(1)

@@ -12,17 +12,15 @@ $report = static function (string $file): void {
     (static function () use ($file): void {
         require $file;
     })();
-    \turbocov\stop();
+    $executed = \turbocov\stop()[$file];
     ob_end_clean();
 
-    $lines = \turbocov\collect(\turbocov\inclusive, [$file])[$file];
-    $covered = array_keys(array_filter($lines, static fn (int $status): bool => $status === 1));
-    $uncovered = array_keys(array_filter($lines, static fn (int $status): bool => $status === -1));
+    $covered = array_keys($executed);
+    $uncovered = array_keys(array_diff_key(\turbocov\executable_lines([$file])[$file], $executed));
     sort($covered);
     sort($uncovered);
 
     echo basename($file), "\n  covered: ", implode(',', $covered), "\n  not covered: ", implode(',', $uncovered), "\n";
-    \turbocov\clear();
 };
 
 $report(__DIR__ . '/fixtures/basic.php');

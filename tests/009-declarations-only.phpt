@@ -10,24 +10,21 @@ $file = __DIR__ . '/fixtures/functions.php';
 
 \turbocov\start();
 require $file;
-\turbocov\stop();
+$executed = \turbocov\stop();
 
-var_dump(\turbocov\waiting() === [$file]);
+var_dump(array_keys($executed) === [$file]);
+echo json_encode($executed[$file]), "\n";
 
-$lines = \turbocov\collect(\turbocov\inclusive, [$file])[$file];
+$lines = \turbocov\executable_lines([$file])[$file];
 ksort($lines);
 echo json_encode($lines), "\n";
-\turbocov\clear();
 
 \turbocov\start();
 first(1);
-\turbocov\stop();
-
-$lines = \turbocov\collect(\turbocov\inclusive, [$file])[$file];
-ksort($lines);
-echo json_encode($lines), "\n";
+echo json_encode(\turbocov\stop()[$file]), "\n";
 ?>
 --EXPECT--
 bool(true)
-{"5":-1,"6":-1,"9":-1,"14":-1,"16":-1,"17":-1,"20":-1,"25":-1,"27":1}
-{"5":1,"6":-1,"9":1,"14":-1,"16":-1,"17":-1,"20":-1,"25":-1,"27":-1}
+{"27":1}
+{"5":-1,"6":-1,"9":-1,"14":-1,"16":-1,"17":-1,"20":-1,"25":-1,"27":-1}
+{"5":1,"9":1}

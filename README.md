@@ -3,7 +3,7 @@
 Line coverage driver for PHP. Covered code runs at the speed of plain PHP.
 
 - It reports the same line data as [PCOV](https://github.com/krakjoe/pcov).
-- It has the same functions and INI settings as PCOV.
+- A build option gives it the name, the functions and the settings of PCOV, for tools that only know PCOV.
 - Files outside of the whitelist have no cost at run time.
 
 Status: experimental. Read [Limits](#limits) before you use it.
@@ -85,14 +85,29 @@ php -d turbocov.collect_paths=@changed.txt vendor/bin/phpunit
 ## Functions
 
 ```php
-\turbocov\start();                 // start the collection
-\turbocov\stop();                  // stop the collection
-\turbocov\waiting();               // files that have new data
-\turbocov\collect(                 // file => line => 1 (executed) or -1 (not executed)
-    \turbocov\inclusive,           // or \turbocov\exclusive, \turbocov\all
+\turbocov\status();            // null, or the reason why the collection is off
+\turbocov\start();             // start the collection
+\turbocov\stop();              // stop the collection; file => line => 1 for the lines that ran since start()
+\turbocov\executable_lines(    // file => line => -1 for each executable line of the given files
     ['/absolute/path/File.php'],
 );
-\turbocov\clear();                 // drop the data, arm the probes again
+\turbocov\stats();             // counters for diagnosis
+```
+
+- `stop()` returns only the lines that ran. It also arms the probes again, so the next `start()` begins with no data.
+- A file that PHP loaded during the collection is in the result of `stop()`, also when none of its lines ran.
+- `executable_lines()` knows only the files that PHP compiled and that are in `turbocov.collect_paths`.
+
+A coverage tool needs the lines that did not run only once for each file:
+
+```php
+$executed = \turbocov\stop();
+$newFiles = array_diff_key($executed, $seenFiles);
+
+foreach (\turbocov\executable_lines(array_keys($newFiles)) as $file => $lines) {
+    $executed[$file] = array_replace($lines, $executed[$file]);
+    $seenFiles[$file] = true;
+}
 ```
 
 ## Use with PHPUnit
@@ -105,19 +120,19 @@ PHPUnit selects its PCOV driver when an extension with the name `pcov` is loaded
 
 The extension then registers as `pcov`. PHPUnit and all other tools that support PCOV work without a change.
 
-- The functions are `\pcov\start()` and so on.
+- The functions are the functions of PCOV: `\pcov\start()`, `stop()`, `waiting()`, `collect()`, `clear()` and `memory()`. The functions of the section above do not exist in this build.
 - The settings are `pcov.enabled`, `pcov.directory` (as `turbocov.collect_paths`) and `pcov.exclude` (as `turbocov.exclude_pattern`).
 - `pcov.directory` has no default. PCOV uses `src`, `lib` or `app` when the setting is empty; turbocov collects nothing and gives a warning.
 - Do not load the real PCOV at the same time.
 
 ## Limits
 
-- OPcache: turbocov puts its probes into the code that OPcache caches. This is not possible with `opcache.protect_memory=1`, with `opcache.file_cache`, with the JIT, and in a SAPI other than the CLI. In these cases turbocov turns the collection off, and the first call of `start()` gives a warning.
+- OPcache: turbocov puts its probes into the code that OPcache caches. This is not possible with `opcache.protect_memory=1`, with `opcache.file_cache`, with the JIT, and in a SAPI other than the CLI. In these cases turbocov turns the collection off. `status()` returns the reason, and the first call of `start()` gives a warning.
 - OPcache optimizer: the optimizer can remove code, and a line without code is not executable. PCOV has the same behavior. Set `opcache.optimization_level=0` for line data that does not depend on the optimizer.
 - Other extensions that replace the instruction loop (PCOV, phpdbg) make turbocov slow. The results stay correct.
 - Xdebug: not tested together.
 - No branch coverage, no path coverage, no detection of dead code.
-- `clear(true)` does not drop the file list. The argument has no effect.
+- In the build with the name `pcov`, `clear(true)` does not drop the file list. The argument has no effect.
 
 ## Development
 
