@@ -1383,6 +1383,23 @@ static PHP_MSHUTDOWN_FUNCTION(turbocov)
  * In a CLI process that memory is private and writable, thus probes work there.
  * Returns the reason when probes cannot work, else NULL.
  */
+static const char *tc_find_extension_conflict(void)
+{
+	/* Xdebug registers its own opcode handlers. The two extensions are not tested together. */
+	if (zend_hash_str_exists(&module_registry, ZEND_STRL("xdebug"))) {
+		return "the Xdebug extension is loaded. Do not load it together with " TURBOCOV_NAME;
+	}
+
+#ifndef TURBOCOV_IMPERSONATE_PCOV
+	/* PCOV replaces the instruction loop of PHP. The probes then cost time on each opcode. */
+	if (zend_hash_str_exists(&module_registry, ZEND_STRL("pcov"))) {
+		return "the PCOV extension is loaded. Do not load it together with turbocov";
+	}
+#endif
+
+	return NULL;
+}
+
 static const char *tc_find_opcache_conflict(void)
 {
 	bool is_cli = strcmp(sapi_module.name, "cli") == 0 || strcmp(sapi_module.name, "phpdbg") == 0;
@@ -1411,6 +1428,13 @@ static const char *tc_find_opcache_conflict(void)
 	if (value && *value && INI_INT("opcache.jit_buffer_size") > 0
 		&& strcmp(value, "disable") != 0 && strcmp(value, "off") != 0 && strcmp(value, "0") != 0) {
 		return "the JIT of OPcache is on";
+	}
+
+	/* OPcache compiles the preloaded code before the first request, thus before turbocov has its hooks. */
+	value = INI_STR("opcache.preload");
+
+	if (value && *value) {
+		return "opcache.preload is set. Code that OPcache preloads gets no probes";
 	}
 
 	/* The optimizer removes code. A line without code has no probe, and the report shows it as not covered. */
@@ -1450,7 +1474,11 @@ static PHP_RINIT_FUNCTION(turbocov)
 	}
 
 	if (!tc_orig_compile_file) {
-		const char *conflict = tc_find_opcache_conflict();
+		const char *conflict = tc_find_extension_conflict();
+
+		if (!conflict) {
+			conflict = tc_find_opcache_conflict();
+		}
 
 		if (conflict) {
 			/* No message here: most processes do not collect coverage, and a message at startup can break their output. */

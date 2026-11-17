@@ -159,10 +159,12 @@ The extension then registers as `pcov`. PHPUnit and all other tools that support
 
 ## Limits
 
-- OPcache: turbocov puts its probes into the code that OPcache caches. This is not possible with `opcache.protect_memory=1`, with `opcache.file_cache`, with the JIT, and in a SAPI other than the CLI. In these cases `start()` throws an exception.
+- OPcache: turbocov puts its probes into the code that OPcache caches. This is not possible with `opcache.protect_memory=1`, with `opcache.file_cache`, with `opcache.preload`, with the JIT, and in a SAPI other than the CLI. In these cases `start()` throws an exception.
 - OPcache optimizer: `start()` throws an exception when OPcache is on and `opcache.optimization_level` is not `0`. The optimizer removes code. A line without code has no probe, and the report then shows a line as not covered although the test ran it.
-- Other extensions that replace the instruction loop (PCOV, phpdbg) make turbocov slow. The results stay correct.
-- Xdebug: not tested together.
+- Xdebug and PCOV: `start()` throws an exception when one of them is loaded, also when it is not active. Xdebug is not tested together with turbocov. PCOV replaces the instruction loop of PHP, and turbocov is then slow.
+- phpdbg replaces the instruction loop too. turbocov is then slow. The results stay correct.
+- `pcntl_fork()` with OPcache on: the parent process and the child process share the cached code. A probe that fires in one process is gone for the other, and lines can be missing.
+- An extension that registers opcode handlers after turbocov replaces the handler of turbocov. Probes on those opcodes then record nothing.
 - No branch coverage, no path coverage, no detection of dead code.
 - In the build with the name `pcov`, `clear(true)` does not drop the file list. The argument has no effect.
 
