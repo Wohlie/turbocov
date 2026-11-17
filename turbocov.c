@@ -7,6 +7,8 @@
 #include "SAPI.h"
 #include "ext/standard/info.h"
 #include "ext/pcre/php_pcre.h"
+#include "ext/spl/spl_exceptions.h"
+#include "zend_exceptions.h"
 #include "zend_extensions.h"
 #include "zend_vm.h"
 #include "zend_vm_opcodes.h"
@@ -92,7 +94,11 @@ typedef struct _tc_paths {
 
 static bool tc_ini_enabled;
 static char tc_off_reason[MAXPATHLEN + 128]; /* why the collection is off, or an empty string */
+#ifdef TURBOCOV_IMPERSONATE_PCOV
 static bool tc_off_warned;
+#else
+static zend_class_entry *tc_exception_ce;
+#endif
 static bool tc_active;
 static bool tc_collecting;
 static bool tc_dirty;
@@ -765,10 +771,18 @@ PHP_NAMED_FUNCTION(tc_function_start)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
+#ifdef TURBOCOV_IMPERSONATE_PCOV
+	/* The PCOV driver of PHPUnit does not expect an exception from start(). */
 	if (*tc_off_reason && !tc_off_warned) {
 		tc_off_warned = true;
 		zend_error(E_WARNING, TURBOCOV_NAME ": the coverage collection is off, because %s", tc_off_reason);
 	}
+#else
+	if (*tc_off_reason) {
+		zend_throw_exception_ex(tc_exception_ce, 0, "turbocov cannot collect coverage: %s", tc_off_reason);
+		RETURN_THROWS();
+	}
+#endif
 
 	if (!tc_active) {
 		return;
@@ -1243,24 +1257,8 @@ PHP_NAMED_FUNCTION(tc_function_get_executable_lines)
 }
 /* }}} */
 
-/* {{{ ?string get_disabled_reason() */
-PHP_NAMED_FUNCTION(tc_function_get_disabled_reason)
-{
-	ZEND_PARSE_PARAMETERS_NONE();
-
-	if (*tc_off_reason) {
-		RETURN_STRING(tc_off_reason);
-	}
-
-	RETURN_NULL();
-}
-/* }}} */
-
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_get_executable_lines, 0, 1, IS_ARRAY, 0)
 	ZEND_ARG_TYPE_INFO(0, files, IS_ARRAY, 0)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_get_disabled_reason, 0, 0, IS_STRING, 1)
 ZEND_END_ARG_INFO()
 
 
@@ -1268,7 +1266,6 @@ static const zend_function_entry tc_functions[] = {
 	ZEND_NS_FENTRY(TURBOCOV_NAME, start, tc_function_start, tc_arginfo_void, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, stop, tc_function_stop, tc_arginfo_array, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, get_executable_lines, tc_function_get_executable_lines, tc_arginfo_get_executable_lines, 0)
-	ZEND_NS_FENTRY(TURBOCOV_NAME, get_disabled_reason, tc_function_get_disabled_reason, tc_arginfo_get_disabled_reason, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, get_status, tc_function_get_status, tc_arginfo_array, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, get_debug_info, tc_function_get_debug_info, tc_arginfo_get_debug_info, 0)
 	PHP_FE_END
@@ -1299,6 +1296,11 @@ static PHP_MINIT_FUNCTION(turbocov)
 	REGISTER_NS_LONG_CONSTANT(TURBOCOV_NAME, "inclusive", TC_FILTER_INCLUDE, CONST_CS | CONST_PERSISTENT);
 	REGISTER_NS_LONG_CONSTANT(TURBOCOV_NAME, "exclusive", TC_FILTER_EXCLUDE, CONST_CS | CONST_PERSISTENT);
 	REGISTER_NS_STRING_CONSTANT(TURBOCOV_NAME, "version", PHP_TURBOCOV_VERSION, CONST_CS | CONST_PERSISTENT);
+#else
+	zend_class_entry exception_ce;
+
+	INIT_NS_CLASS_ENTRY(exception_ce, TURBOCOV_NAME, "Exception", NULL);
+	tc_exception_ce = zend_register_internal_class_ex(&exception_ce, spl_ce_RuntimeException);
 #endif
 
 	REGISTER_INI_ENTRIES();
@@ -1306,9 +1308,11 @@ static PHP_MINIT_FUNCTION(turbocov)
 	tc_ini_enabled = INI_BOOL(TURBOCOV_NAME ".enabled");
 
 	if (!tc_ini_enabled) {
-		/* The user turned the extension off. start() gives no warning for that. */
 		snprintf(tc_off_reason, sizeof(tc_off_reason), TURBOCOV_NAME ".enabled is 0");
+#ifdef TURBOCOV_IMPERSONATE_PCOV
+		/* The user turned the extension off. start() gives no warning for that. */
 		tc_off_warned = true;
+#endif
 
 		return SUCCESS;
 	}
@@ -1318,7 +1322,9 @@ static PHP_MINIT_FUNCTION(turbocov)
 	if (tc_slot < 0) {
 		zend_error(E_CORE_WARNING, TURBOCOV_NAME ": no free op array slot, the extension is off");
 		snprintf(tc_off_reason, sizeof(tc_off_reason), "PHP has no free op array slot");
+#ifdef TURBOCOV_IMPERSONATE_PCOV
 		tc_off_warned = true;
+#endif
 		tc_ini_enabled = false;
 
 		return SUCCESS;
@@ -1434,7 +1440,9 @@ static PHP_RINIT_FUNCTION(turbocov)
 	zend_hash_init(&tc_units, 256, NULL, NULL, 1);
 
 	*tc_off_reason = '\0';
+#ifdef TURBOCOV_IMPERSONATE_PCOV
 	tc_off_warned = false;
+#endif
 	tc_setup_paths();
 	tc_setup_exclude_pattern();
 
@@ -1489,6 +1497,7 @@ static PHP_MINFO_FUNCTION(turbocov)
 
 static const zend_module_dep tc_module_deps[] = {
 	ZEND_MOD_REQUIRED("pcre")
+	ZEND_MOD_REQUIRED("spl")
 	ZEND_MOD_END
 };
 

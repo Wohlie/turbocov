@@ -1,5 +1,5 @@
 --TEST--
-With read-only OPcache memory the extension turns the collection off and start() gives a warning
+With read-only OPcache memory start() throws an exception
 --EXTENSIONS--
 turbocov
 --SKIPIF--
@@ -15,18 +15,22 @@ opcache.protect_memory=1
 turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
-var_dump(\turbocov\get_disabled_reason());
+for ($call = 0; $call < 2; $call++) {
+    try {
+        \turbocov\start();
+    } catch (\turbocov\Exception $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
 
-\turbocov\start();
-require __DIR__ . '/fixtures/functions.php';
-var_dump(second(2));
-var_dump(\turbocov\stop());
-\turbocov\start();
+require __DIR__ . "/fixtures/functions.php";
+second(2);
+
+echo json_encode(\turbocov\stop()), "\n";
+echo json_encode(\turbocov\get_status()["collecting"]), "\n";
 ?>
 --EXPECTF--
-string(56) "opcache.protect_memory makes the compiled code read-only"
-
-Warning: %s: the coverage collection is off, because opcache.protect_memory makes the compiled code read-only in %s on line %d
-int(1)
-array(0) {
-}
+turbocov cannot collect coverage: opcache.protect_memory makes the compiled code read-only
+turbocov cannot collect coverage: opcache.protect_memory makes the compiled code read-only
+[]
+false

@@ -72,7 +72,7 @@ Rules:
 
 - A relative path starts at the working directory.
 - turbocov ignores a path that does not exist.
-- Without `turbocov.collect_paths` turbocov collects nothing, and the first call of `start()` gives a warning.
+- Without `turbocov.collect_paths` turbocov collects nothing, and `start()` throws an exception.
 - The settings apply when PHP compiles a file. Set them in `php.ini` or with `-d`, not with `ini_set()`.
 
 To collect coverage only for the files that a branch changes:
@@ -85,8 +85,7 @@ php -d turbocov.collect_paths=@changed.txt vendor/bin/phpunit
 ## Functions
 
 ```php
-\turbocov\get_disabled_reason();     // null, or the reason why the collection is off
-\turbocov\start();                   // start the collection
+\turbocov\start();                   // start the collection, or throw \turbocov\Exception
 \turbocov\stop();                    // stop the collection; file => line => 1 for the lines that ran since start()
 \turbocov\get_executable_lines(      // file => line => -1 for each executable line of the given files
     ['/absolute/path/File.php'],
@@ -96,6 +95,7 @@ php -d turbocov.collect_paths=@changed.txt vendor/bin/phpunit
 );
 ```
 
+- `start()` throws `\turbocov\Exception` when turbocov cannot collect coverage. The message has the reason, for example `turbocov.collect_paths is not set`. `\turbocov\Exception` extends `RuntimeException`.
 - `stop()` returns only the lines that ran. It also arms the probes again, so the next `start()` begins with no data.
 - A file that PHP loaded during the collection is in the result of `stop()`, also when none of its lines ran.
 - `get_executable_lines()` knows only the files that PHP compiled and that are in `turbocov.collect_paths`. Other files are not in the result.
@@ -150,12 +150,13 @@ The extension then registers as `pcov`. PHPUnit and all other tools that support
 
 - The functions are the functions of PCOV: `\pcov\start()`, `stop()`, `waiting()`, `collect()`, `clear()` and `memory()`. The functions of the section above do not exist in this build.
 - The settings are `pcov.enabled`, `pcov.directory` (as `turbocov.collect_paths`) and `pcov.exclude` (as `turbocov.exclude_pattern`).
-- `pcov.directory` has no default. PCOV uses `src`, `lib` or `app` when the setting is empty; turbocov collects nothing and gives a warning.
+- `pcov.directory` has no default. PCOV uses `src`, `lib` or `app` when the setting is empty; turbocov collects nothing.
+- `\pcov\start()` does not throw an exception. It gives a warning when turbocov cannot collect coverage.
 - Do not load the real PCOV at the same time.
 
 ## Limits
 
-- OPcache: turbocov puts its probes into the code that OPcache caches. This is not possible with `opcache.protect_memory=1`, with `opcache.file_cache`, with the JIT, and in a SAPI other than the CLI. In these cases turbocov turns the collection off. `get_disabled_reason()` returns the reason, and the first call of `start()` gives a warning.
+- OPcache: turbocov puts its probes into the code that OPcache caches. This is not possible with `opcache.protect_memory=1`, with `opcache.file_cache`, with the JIT, and in a SAPI other than the CLI. In these cases turbocov turns the collection off, and `start()` throws an exception.
 - OPcache optimizer: the optimizer can remove code, and a line without code is not executable. PCOV has the same behavior. Set `opcache.optimization_level=0` for line data that does not depend on the optimizer.
 - Other extensions that replace the instruction loop (PCOV, phpdbg) make turbocov slow. The results stay correct.
 - Xdebug: not tested together.
