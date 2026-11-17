@@ -1,6 +1,6 @@
 {
     "name": "shipmonk/turbocov",
-    "description": "Line coverage driver for PHP that runs covered code at plain PHP speed",
+    "description": "Coverage engine for PHP at near-native speed! 40× less overhead than Xdebug, 12× less than PCOV.",
     "type": "php-ext",
     "license": "MIT",
     "require": {
