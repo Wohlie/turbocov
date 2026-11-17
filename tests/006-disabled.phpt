@@ -14,7 +14,7 @@ require __DIR__ . '/fixtures/functions.php';
 second(2);
 
 var_dump(\turbocov\stop(), \turbocov\get_executable_lines([__DIR__ . '/fixtures/functions.php']));
-echo json_encode(\turbocov\get_debug_info()), "\n";
+echo json_encode(\turbocov\get_status()), "\n";
 echo json_encode(\turbocov\get_debug_info(__DIR__ . '/fixtures/functions.php')), "\n";
 ?>
 --EXPECT--

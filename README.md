@@ -91,7 +91,6 @@ php -d turbocov.collect_paths=@changed.txt vendor/bin/phpunit
 \turbocov\get_executable_lines(      // file => line => -1 for each executable line of the given files
     ['/absolute/path/File.php'],
 );
-\turbocov\get_debug_info();          // the state of the extension, for a person
 \turbocov\get_debug_info(            // the state of one file, for a person
     '/absolute/path/File.php',
 );
@@ -117,19 +116,7 @@ foreach (\turbocov\get_executable_lines(array_keys($newFiles)) as $file => $line
 
 `get_debug_info()` is for a person who looks for the cause of a result. Its format can change in each version. Do not use it in a tool.
 
-Without an argument it returns the state of the extension:
-
-```php
-[
-    'disabled_reason'  => null,   // as get_disabled_reason()
-    'collecting'       => true,   // true between start() and stop()
-    'collected_files'  => 250,    // files that have probes
-    'installed_probes' => 11189,  // since the start of the process
-    'fired_probes'     => 275,    // since the start of the process
-]
-```
-
-With a file it returns the probes of that file:
+It returns the probes of one file:
 
 ```php
 [

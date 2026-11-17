@@ -28,7 +28,7 @@ dump('before start()', $file);
 first(1);
 dump('during the collection', $file);
 
-$global = \turbocov\get_debug_info();
+$global = \turbocov\get_status();
 echo json_encode(array_slice($global, 0, 3)), ' ', $global['installed_probes'] > 0 ? 'probes' : '', ' ', $global['fired_probes'] > 0 ? 'fired' : '', "\n";
 
 \turbocov\stop();

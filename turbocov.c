@@ -923,47 +923,50 @@ static int tc_compare_lines(const void *left, const void *right)
 	return a < b ? -1 : (a > b ? 1 : 0);
 }
 
-/* {{{ array get_debug_info(?string $file = null) */
-PHP_NAMED_FUNCTION(tc_function_get_debug_info)
+/* {{{ array get_status() */
+PHP_NAMED_FUNCTION(tc_function_get_status)
 {
-	zend_string *filename = NULL;
-	zend_string *reason;
 	zval *known;
-	zval lines;
-	zval units;
+	zend_long files = 0;
 
-	ZEND_PARSE_PARAMETERS_START(0, 1)
-		Z_PARAM_OPTIONAL
-		Z_PARAM_STR_OR_NULL(filename)
-	ZEND_PARSE_PARAMETERS_END();
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	if (tc_active) {
+		ZEND_HASH_MAP_FOREACH_VAL(&tc_files, known) {
+			if (Z_PTR_P(known)) {
+				files++;
+			}
+		} ZEND_HASH_FOREACH_END();
+	}
 
 	array_init(return_value);
 
-	if (!filename) {
-		zend_long files = 0;
-
-		if (tc_active) {
-			ZEND_HASH_MAP_FOREACH_VAL(&tc_files, known) {
-				if (Z_PTR_P(known)) {
-					files++;
-				}
-			} ZEND_HASH_FOREACH_END();
-		}
-
-		if (*tc_off_reason) {
-			add_assoc_string(return_value, "disabled_reason", tc_off_reason);
-		} else {
-			add_assoc_null(return_value, "disabled_reason");
-		}
-
-		add_assoc_bool(return_value, "collecting", tc_collecting);
-		add_assoc_long(return_value, "collected_files", files);
-		add_assoc_long(return_value, "installed_probes", (zend_long) tc_stat_probes);
-		add_assoc_long(return_value, "fired_probes", (zend_long) tc_stat_fires);
-
-		return;
+	if (*tc_off_reason) {
+		add_assoc_string(return_value, "disabled_reason", tc_off_reason);
+	} else {
+		add_assoc_null(return_value, "disabled_reason");
 	}
 
+	add_assoc_bool(return_value, "collecting", tc_collecting);
+	add_assoc_long(return_value, "collected_files", files);
+	add_assoc_long(return_value, "installed_probes", (zend_long) tc_stat_probes);
+	add_assoc_long(return_value, "fired_probes", (zend_long) tc_stat_fires);
+}
+/* }}} */
+
+/* {{{ array get_debug_info(string $file) */
+PHP_NAMED_FUNCTION(tc_function_get_debug_info)
+{
+	zend_string *filename;
+	zend_string *reason;
+	zval lines;
+	zval units;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_STR(filename)
+	ZEND_PARSE_PARAMETERS_END();
+
+	array_init(return_value);
 	array_init(&lines);
 	array_init(&units);
 
@@ -1003,8 +1006,8 @@ PHP_NAMED_FUNCTION(tc_function_get_debug_info)
 }
 /* }}} */
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_get_debug_info, 0, 0, IS_ARRAY, 0)
-	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, file, IS_STRING, 1, "null")
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_get_debug_info, 0, 1, IS_ARRAY, 0)
+	ZEND_ARG_TYPE_INFO(0, file, IS_STRING, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_void, 0, 0, IS_VOID, 0)
@@ -1166,6 +1169,7 @@ static const zend_function_entry tc_functions[] = {
 	ZEND_NS_FENTRY(TURBOCOV_NAME, clear, tc_function_clear, tc_arginfo_clear, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, waiting, tc_function_waiting, tc_arginfo_array, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, memory, tc_function_memory, tc_arginfo_int, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, get_status, tc_function_get_status, tc_arginfo_array, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, get_debug_info, tc_function_get_debug_info, tc_arginfo_get_debug_info, 0)
 	PHP_FE_END
 };
@@ -1265,6 +1269,7 @@ static const zend_function_entry tc_functions[] = {
 	ZEND_NS_FENTRY(TURBOCOV_NAME, stop, tc_function_stop, tc_arginfo_array, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, get_executable_lines, tc_function_get_executable_lines, tc_arginfo_get_executable_lines, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, get_disabled_reason, tc_function_get_disabled_reason, tc_arginfo_get_disabled_reason, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, get_status, tc_function_get_status, tc_arginfo_array, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, get_debug_info, tc_function_get_debug_info, tc_arginfo_get_debug_info, 0)
 	PHP_FE_END
 };
