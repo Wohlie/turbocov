@@ -2,9 +2,9 @@
 
 Line coverage driver for PHP. Covered code runs at the speed of plain PHP.
 
-- It reports the same line data as [PCOV](https://github.com/krakjoe/pcov).
-- A build option gives it the name, the functions and the settings of PCOV, for tools that only know PCOV.
-- Files outside of the whitelist have no cost at run time.
+- It reports the same line data as [PCOV](https://github.com/krakjoe/pcov), and also the lines of property hooks.
+- Files that are not in its path list have no cost at run time.
+- [shipmonk/turbocov-phpunit](https://github.com/shipmonk-rnd/turbocov-phpunit) connects it to PHPUnit.
 
 Status: experimental. Read [Limits](#limits) before you use it.
 
@@ -144,13 +144,36 @@ It returns the probes of one file:
 
 ## Use with PHPUnit
 
-PHPUnit selects its PCOV driver when an extension with the name `pcov` is loaded. Build turbocov with that name:
+PHPUnit 13.3 and later can load a coverage driver from a package. The package [shipmonk/turbocov-phpunit](https://github.com/shipmonk-rnd/turbocov-phpunit) has the driver for turbocov.
+
+```sh
+pie install shipmonk/turbocov
+composer require --dev shipmonk/turbocov-phpunit
+```
+
+Set the driver in `phpunit.xml`:
+
+```xml
+<coverage driver="ShipMonk\Turbocov\TurbocovDriver"/>
+```
+
+Then give the paths to the extension and run PHPUnit:
+
+```sh
+php -d turbocov.collect_paths=src vendor/bin/phpunit
+```
+
+The README of the package has the details.
+
+### PHPUnit before 13.3 and other tools that only know PCOV
+
+These tools select their PCOV driver when an extension with the name `pcov` is loaded. A build option makes turbocov register with that name:
 
 ```sh
 ./configure --enable-turbocov --enable-turbocov-impersonate-pcov
 ```
 
-The extension then registers as `pcov`. PHPUnit and all other tools that support PCOV work without a change.
+PHPUnit and other tools that support PCOV then work without a change. This build is a temporary aid, and a later version can remove it.
 
 - The functions are the functions of PCOV: `\pcov\start()`, `stop()`, `waiting()`, `collect()`, `clear()` and `memory()`. The functions of the section above do not exist in this build.
 - The settings are `pcov.enabled`, `pcov.directory` (as `turbocov.collect_paths`) and `pcov.exclude` (as `turbocov.exclude_pattern`).
@@ -167,6 +190,7 @@ The extension then registers as `pcov`. PHPUnit and all other tools that support
 - `pcntl_fork()` with OPcache on: the parent process and the child process share the cached code. A probe that fires in one process is gone for the other, and lines can be missing.
 - An extension that registers opcode handlers after turbocov replaces the handler of turbocov. Probes on those opcodes then record nothing.
 - No branch coverage, no path coverage, no detection of dead code.
+- Property hooks: turbocov reports their lines. PCOV 1.0.12 does not report them; the `develop` branch of PCOV does, and it gives the same line data as turbocov. With PHPUnit 13, a report of turbocov thus has lines that a report of PCOV 1.0.12 does not have.
 - In the build with the name `pcov`, `clear(true)` does not drop the file list. The argument has no effect.
 
 ## Development
