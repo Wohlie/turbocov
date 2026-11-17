@@ -14,7 +14,7 @@ opcache.enable_cli=1
 opcache.jit=disable
 opcache.protect_memory=0
 opcache.file_update_protection=0
-turbocov.directory={PWD}/fixtures
+turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
 $file = __DIR__ . '/fixtures/functions.php';

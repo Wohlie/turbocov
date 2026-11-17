@@ -59,10 +59,28 @@ Load the result with `extension=/path/to/modules/turbocov.so`.
 | Setting | Default | Description |
 |---|---|---|
 | `turbocov.enabled` | `1` | Set `0` to turn the extension off. It then has no effect at all. |
-| `turbocov.directory` | automatic | Only files below this directory get probes. The default is the first of `src`, `lib`, `app` that exists, else the working directory. |
-| `turbocov.exclude` | none | A PCRE pattern. Files with a matching path get no probes. |
+| `turbocov.collect_paths` | none | The files and directories that get probes. A directory includes all files below it. |
+| `turbocov.exclude_paths` | none | The files and directories that get no probes. |
+| `turbocov.exclude_pattern` | none | A PCRE pattern. Files with a matching path get no probes. |
 
-The settings apply when PHP compiles a file. Set them in `php.ini` or with `-d`, not with `ini_set()`.
+The two path settings take one of these values:
+
+- A list of paths with `:` between them: `src:config/services.php`.
+- `@` and the name of a list file: `@changed.txt`. The list file has one path on each line.
+
+Rules:
+
+- A relative path starts at the working directory.
+- turbocov ignores a path that does not exist.
+- Without `turbocov.collect_paths` turbocov collects nothing, and the first call of `start()` gives a warning.
+- The settings apply when PHP compiles a file. Set them in `php.ini` or with `-d`, not with `ini_set()`.
+
+To collect coverage only for the files that a branch changes:
+
+```sh
+git diff --name-only --diff-filter=AMR origin/master...HEAD -- '*.php' > changed.txt
+php -d turbocov.collect_paths=@changed.txt vendor/bin/phpunit
+```
 
 ## Functions
 
@@ -85,7 +103,12 @@ PHPUnit selects its PCOV driver when an extension with the name `pcov` is loaded
 ./configure --enable-turbocov --enable-turbocov-impersonate-pcov
 ```
 
-The extension then registers as `pcov`. The functions are `\pcov\start()` and so on, and the settings are `pcov.enabled`, `pcov.directory` and `pcov.exclude`. PHPUnit and all other tools that support PCOV work without a change. Do not load the real PCOV at the same time.
+The extension then registers as `pcov`. PHPUnit and all other tools that support PCOV work without a change.
+
+- The functions are `\pcov\start()` and so on.
+- The settings are `pcov.enabled`, `pcov.directory` (as `turbocov.collect_paths`) and `pcov.exclude` (as `turbocov.exclude_pattern`).
+- `pcov.directory` has no default. PCOV uses `src`, `lib` or `app` when the setting is empty; turbocov collects nothing and gives a warning.
+- Do not load the real PCOV at the same time.
 
 ## Limits
 

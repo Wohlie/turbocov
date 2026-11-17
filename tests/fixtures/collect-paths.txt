@@ -1,0 +1,3 @@
+tests/fixtures/functions.php
+
+  tests/fixtures/missing.php

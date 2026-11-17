@@ -3,7 +3,7 @@ collect() reports every executable line and marks the executed lines
 --EXTENSIONS--
 turbocov
 --INI--
-turbocov.directory={PWD}/fixtures
+turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
 $file = __DIR__ . '/fixtures/functions.php';

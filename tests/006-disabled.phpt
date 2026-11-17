@@ -4,7 +4,7 @@ With turbocov.enabled=0 the extension does nothing
 turbocov
 --INI--
 turbocov.enabled=0
-turbocov.directory={PWD}/fixtures
+turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
 var_dump(\turbocov\enabled());

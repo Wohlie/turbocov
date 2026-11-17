@@ -3,7 +3,7 @@ A file with declarations only is reported when it is included during the collect
 --EXTENSIONS--
 turbocov
 --INI--
-turbocov.directory={PWD}/fixtures
+turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
 $file = __DIR__ . '/fixtures/functions.php';

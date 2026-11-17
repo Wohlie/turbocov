@@ -3,7 +3,7 @@ start(), stop() and clear() give each run its own data
 --EXTENSIONS--
 turbocov
 --INI--
-turbocov.directory={PWD}/fixtures
+turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
 $file = __DIR__ . '/fixtures/functions.php';

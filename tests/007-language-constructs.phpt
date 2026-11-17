@@ -3,7 +3,7 @@ Generators, closures, traits, match, try/finally and other constructs report the
 --EXTENSIONS--
 turbocov
 --INI--
-turbocov.directory={PWD}/fixtures
+turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
 $report = static function (string $file): void {

@@ -3,7 +3,7 @@ Code that the engine destroys before collect() keeps its lines
 --EXTENSIONS--
 turbocov
 --INI--
-turbocov.directory={PWD}
+turbocov.collect_paths={PWD}
 --FILE--
 <?php
 \turbocov\start();

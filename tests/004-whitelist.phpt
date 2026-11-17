@@ -1,10 +1,10 @@
 --TEST--
-Files outside of the directory and files that match the exclude pattern get no probes
+Files outside of the collect paths and files that match the exclude pattern get no probes
 --EXTENSIONS--
 turbocov
 --INI--
-turbocov.directory={PWD}/fixtures
-turbocov.exclude=~/functions[.]php~
+turbocov.collect_paths={PWD}/fixtures
+turbocov.exclude_pattern=~/functions[.]php~
 --FILE--
 <?php
 \turbocov\start();

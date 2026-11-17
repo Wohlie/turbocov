@@ -12,7 +12,7 @@ if (!extension_loaded('Zend OPcache')) {
 opcache.enable=1
 opcache.enable_cli=1
 opcache.protect_memory=1
-turbocov.directory={PWD}/fixtures
+turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
 var_dump(\turbocov\enabled());

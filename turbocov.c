@@ -73,8 +73,23 @@ typedef struct _tc_refs {
 	size_t capacity;
 } tc_refs;
 
+/* The INI settings of PCOV take the same values. They are only other names. */
+#ifdef TURBOCOV_IMPERSONATE_PCOV
+# define TC_INI_COLLECT_PATHS   TURBOCOV_NAME ".directory"
+# define TC_INI_EXCLUDE_PATTERN TURBOCOV_NAME ".exclude"
+#else
+# define TC_INI_COLLECT_PATHS   TURBOCOV_NAME ".collect_paths"
+# define TC_INI_EXCLUDE_PATHS   TURBOCOV_NAME ".exclude_paths"
+# define TC_INI_EXCLUDE_PATTERN TURBOCOV_NAME ".exclude_pattern"
+#endif
+
+typedef struct _tc_paths {
+	HashTable files;       /* absolute path => nothing */
+	HashTable directories; /* absolute path with a slash at the end => nothing */
+} tc_paths;
+
 static bool tc_ini_enabled;
-static const char *tc_opcache_conflict;
+static char tc_start_warning[MAXPATHLEN + 128]; /* the reason why the collection is off, for the next start() */
 static bool tc_active;
 static bool tc_collecting;
 static bool tc_dirty;
@@ -83,8 +98,9 @@ static int tc_slot = -1;
 static const void *tc_probe_label;
 static zend_ulong tc_ignored_opcodes[256 / ZEND_BITSET_ELM_SIZE];
 
-static zend_string *tc_directory;
-static pcre_cache_entry *tc_exclude;
+static tc_paths tc_collect_paths;
+static tc_paths tc_exclude_paths;
+static pcre_cache_entry *tc_exclude_pattern;
 
 static HashTable tc_files; /* file name => tc_file, or NULL for a file outside the whitelist */
 static HashTable tc_units; /* opcodes address => tc_unit */
@@ -105,8 +121,11 @@ static zend_op_array *(*tc_orig_compile_string)(zend_string *source_string, cons
 
 PHP_INI_BEGIN()
 	PHP_INI_ENTRY(TURBOCOV_NAME ".enabled", "1", PHP_INI_SYSTEM, NULL)
-	PHP_INI_ENTRY(TURBOCOV_NAME ".directory", "", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
-	PHP_INI_ENTRY(TURBOCOV_NAME ".exclude", "", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
+	PHP_INI_ENTRY(TC_INI_COLLECT_PATHS, "", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
+#ifdef TC_INI_EXCLUDE_PATHS
+	PHP_INI_ENTRY(TC_INI_EXCLUDE_PATHS, "", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
+#endif
+	PHP_INI_ENTRY(TC_INI_EXCLUDE_PATTERN, "", PHP_INI_SYSTEM | PHP_INI_PERDIR, NULL)
 PHP_INI_END()
 
 static void tc_refs_push(tc_refs *list, tc_unit *unit, uint32_t probe)
@@ -268,14 +287,32 @@ static void tc_unregister_handlers(void)
 	}
 }
 
-static bool tc_matches_exclude(zend_string *filename)
+static bool tc_paths_contain(const tc_paths *paths, zend_string *filename)
+{
+	zend_string *directory;
+
+	if (zend_hash_exists(&paths->files, filename)) {
+		return true;
+	}
+
+	ZEND_HASH_MAP_FOREACH_STR_KEY(&paths->directories, directory) {
+		if (ZSTR_LEN(filename) > ZSTR_LEN(directory)
+			&& memcmp(ZSTR_VAL(filename), ZSTR_VAL(directory), ZSTR_LEN(directory)) == 0) {
+			return true;
+		}
+	} ZEND_HASH_FOREACH_END();
+
+	return false;
+}
+
+static bool tc_matches_exclude_pattern(zend_string *filename)
 {
 	zval match;
 	bool excluded;
 
 	ZVAL_UNDEF(&match);
 
-	php_pcre_match_impl(tc_exclude, filename, &match, NULL, false, 0, 0);
+	php_pcre_match_impl(tc_exclude_pattern, filename, &match, NULL, false, 0, 0);
 
 	excluded = zend_is_true(&match);
 	zval_ptr_dtor(&match);
@@ -283,7 +320,7 @@ static bool tc_matches_exclude(zend_string *filename)
 	return excluded;
 }
 
-/* Returns the record of a whitelisted file, or NULL. The rules are the rules of pcov.directory and pcov.exclude. */
+/* Returns the record of a whitelisted file, or NULL. */
 static tc_file *tc_file_for(zend_string *filename)
 {
 	zval *known;
@@ -299,10 +336,9 @@ static tc_file *tc_file_for(zend_string *filename)
 		return Z_PTR_P(known);
 	}
 
-	if (tc_directory
-		&& ZSTR_LEN(filename) >= ZSTR_LEN(tc_directory)
-		&& memcmp(ZSTR_VAL(filename), ZSTR_VAL(tc_directory), ZSTR_LEN(tc_directory)) == 0
-		&& !(tc_exclude && tc_matches_exclude(filename))) {
+	if (tc_paths_contain(&tc_collect_paths, filename)
+		&& !tc_paths_contain(&tc_exclude_paths, filename)
+		&& !(tc_exclude_pattern && tc_matches_exclude_pattern(filename))) {
 		file = pecalloc(1, sizeof(tc_file), 1);
 		file->name = zend_string_copy(filename);
 		zend_hash_init(&file->lines, 64, NULL, NULL, 1);
@@ -582,46 +618,139 @@ static void tc_op_array_dtor(zend_op_array *op_array)
 
 static zend_extension tc_zend_extension;
 
-static void tc_setup_directory(void)
+static void tc_paths_init(tc_paths *paths)
 {
-	static const char *defaults[] = {"src", "lib", "app", ".", NULL};
-	const char *directory = INI_STR(TURBOCOV_NAME ".directory");
-	char resolved[MAXPATHLEN];
-
-	if (directory && *directory) {
-		if (VCWD_REALPATH(directory, resolved)) {
-			directory = resolved;
-		}
-	} else {
-		directory = NULL;
-
-		for (const char **candidate = defaults; *candidate; candidate++) {
-			if (VCWD_REALPATH(*candidate, resolved)) {
-				directory = resolved;
-				break;
-			}
-		}
-	}
-
-	tc_directory = directory ? zend_string_init(directory, strlen(directory), 1) : NULL;
+	zend_hash_init(&paths->files, 16, NULL, NULL, 1);
+	zend_hash_init(&paths->directories, 4, NULL, NULL, 1);
 }
 
-static void tc_setup_exclude(void)
+static void tc_paths_destroy(tc_paths *paths)
 {
-	const char *exclude = INI_STR(TURBOCOV_NAME ".exclude");
+	zend_hash_destroy(&paths->files);
+	zend_hash_destroy(&paths->directories);
+}
+
+/* A path that does not exist is not an error: PHP cannot compile such a file. */
+static void tc_paths_add(tc_paths *paths, const char *entry, size_t length)
+{
+	char path[MAXPATHLEN];
+	char resolved[MAXPATHLEN];
+	zend_stat_t status;
+	size_t resolved_length;
+
+	while (length > 0 && isspace((unsigned char) *entry)) {
+		entry++;
+		length--;
+	}
+
+	while (length > 0 && isspace((unsigned char) entry[length - 1])) {
+		length--;
+	}
+
+	if (length == 0 || length >= MAXPATHLEN) {
+		return;
+	}
+
+	memcpy(path, entry, length);
+	path[length] = '\0';
+
+	if (!VCWD_REALPATH(path, resolved) || VCWD_STAT(resolved, &status) != 0) {
+		return;
+	}
+
+	resolved_length = strlen(resolved);
+
+	if (!S_ISDIR(status.st_mode)) {
+		zend_hash_str_add_empty_element(&paths->files, resolved, resolved_length);
+
+		return;
+	}
+
+	if (resolved[resolved_length - 1] != DEFAULT_SLASH) {
+		if (resolved_length + 1 >= MAXPATHLEN) {
+			return;
+		}
+
+		resolved[resolved_length++] = DEFAULT_SLASH;
+		resolved[resolved_length] = '\0';
+	}
+
+	zend_hash_str_add_empty_element(&paths->directories, resolved, resolved_length);
+}
+
+/* The value is a list of paths, or "@" and the name of a file that has one path on each line. */
+static bool tc_paths_load(tc_paths *paths, const char *value)
+{
+	if (!value || !*value) {
+		return true;
+	}
+
+	if (*value == '@') {
+		char line[MAXPATHLEN + 2];
+		FILE *list = VCWD_FOPEN(value + 1, "r");
+
+		if (!list) {
+			return false;
+		}
+
+		while (fgets(line, sizeof(line), list)) {
+			tc_paths_add(paths, line, strlen(line));
+		}
+
+		fclose(list);
+
+		return true;
+	}
+
+	while (*value) {
+		const char *end = strchr(value, ZEND_PATHS_SEPARATOR);
+		size_t length = end ? (size_t) (end - value) : strlen(value);
+
+		tc_paths_add(paths, value, length);
+		value += length + (end ? 1 : 0);
+	}
+
+	return true;
+}
+
+static void tc_setup_paths(void)
+{
+	const char *collect = INI_STR(TC_INI_COLLECT_PATHS);
+
+	tc_paths_init(&tc_collect_paths);
+	tc_paths_init(&tc_exclude_paths);
+
+	if (!collect || !*collect) {
+		snprintf(tc_start_warning, sizeof(tc_start_warning), TC_INI_COLLECT_PATHS " is not set");
+	} else if (!tc_paths_load(&tc_collect_paths, collect)) {
+		snprintf(tc_start_warning, sizeof(tc_start_warning), "the list file %s of " TC_INI_COLLECT_PATHS " is not readable", collect + 1);
+	}
+
+#ifdef TC_INI_EXCLUDE_PATHS
+	if (!tc_paths_load(&tc_exclude_paths, INI_STR(TC_INI_EXCLUDE_PATHS))) {
+		snprintf(tc_start_warning, sizeof(tc_start_warning), "the list file %s of " TC_INI_EXCLUDE_PATHS " is not readable", INI_STR(TC_INI_EXCLUDE_PATHS) + 1);
+		zend_hash_clean(&tc_collect_paths.files);
+		zend_hash_clean(&tc_collect_paths.directories);
+	}
+#endif
+}
+
+static void tc_setup_exclude_pattern(void)
+{
+	const char *exclude = INI_STR(TC_INI_EXCLUDE_PATTERN);
 	zend_string *pattern;
 
-	tc_exclude = NULL;
+	tc_exclude_pattern = NULL;
 
 	if (!exclude || !*exclude) {
 		return;
 	}
 
 	pattern = zend_string_init(exclude, strlen(exclude), 0);
-	tc_exclude = pcre_get_compiled_regex_cache(pattern);
+	tc_exclude_pattern = pcre_get_compiled_regex_cache(pattern);
 
-	if (tc_exclude) {
-		php_pcre_pce_incref(tc_exclude);
+	if (tc_exclude_pattern) {
+		php_pcre_pce_incref(tc_exclude_pattern);
 	}
 
 	zend_string_release(pattern);
@@ -711,9 +840,9 @@ PHP_NAMED_FUNCTION(tc_function_start)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	if (tc_opcache_conflict) {
-		zend_error(E_WARNING, TURBOCOV_NAME ": the coverage collection is off, because %s", tc_opcache_conflict);
-		tc_opcache_conflict = NULL;
+	if (*tc_start_warning) {
+		zend_error(E_WARNING, TURBOCOV_NAME ": the coverage collection is off, because %s", tc_start_warning);
+		*tc_start_warning = '\0';
 	}
 
 	if (!tc_active) {
@@ -976,10 +1105,11 @@ static PHP_RINIT_FUNCTION(turbocov)
 	}
 
 	if (!tc_orig_compile_file) {
-		tc_opcache_conflict = tc_find_opcache_conflict();
+		const char *conflict = tc_find_opcache_conflict();
 
-		if (tc_opcache_conflict) {
+		if (conflict) {
 			/* No message here: most processes do not collect coverage, and a message at startup can break their output. */
+			snprintf(tc_start_warning, sizeof(tc_start_warning), "%s", conflict);
 			tc_ini_enabled = false;
 
 			return SUCCESS;
@@ -991,8 +1121,9 @@ static PHP_RINIT_FUNCTION(turbocov)
 	zend_hash_init(&tc_files, 256, NULL, tc_files_dtor, 1);
 	zend_hash_init(&tc_units, 256, NULL, NULL, 1);
 
-	tc_setup_directory();
-	tc_setup_exclude();
+	*tc_start_warning = '\0';
+	tc_setup_paths();
+	tc_setup_exclude_pattern();
 
 	/* A switch with a jump table does not run the comparison of each case. PCOV turns jump tables off too. */
 	CG(compiler_options) |= ZEND_COMPILE_NO_JUMPTABLES;
@@ -1021,14 +1152,12 @@ static PHP_RSHUTDOWN_FUNCTION(turbocov)
 	zend_hash_destroy(&tc_units);
 	zend_hash_destroy(&tc_files);
 
-	if (tc_directory) {
-		zend_string_release(tc_directory);
-		tc_directory = NULL;
-	}
+	tc_paths_destroy(&tc_collect_paths);
+	tc_paths_destroy(&tc_exclude_paths);
 
-	if (tc_exclude) {
-		php_pcre_pce_decref(tc_exclude);
-		tc_exclude = NULL;
+	if (tc_exclude_pattern) {
+		php_pcre_pce_decref(tc_exclude_pattern);
+		tc_exclude_pattern = NULL;
 	}
 
 	return SUCCESS;
@@ -1040,7 +1169,6 @@ static PHP_MINFO_FUNCTION(turbocov)
 	php_info_print_table_row(2, "turbocov support", tc_ini_enabled ? "enabled" : "disabled");
 	php_info_print_table_row(2, "turbocov version", PHP_TURBOCOV_VERSION);
 	php_info_print_table_row(2, "Registered as", TURBOCOV_NAME);
-	php_info_print_table_row(2, "Directory", tc_directory ? ZSTR_VAL(tc_directory) : "none");
 	php_info_print_table_end();
 
 	DISPLAY_INI_ENTRIES();

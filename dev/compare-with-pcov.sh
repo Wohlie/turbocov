@@ -18,7 +18,7 @@ for file in "$@"; do
     name="$(basename "$file")"
     run="docker run --rm --memory 2g --memory-swap 2g -v $root:/src:ro -v $dir:/code:ro $image php -d opcache.enable_cli=0"
     expected="$($run -d extension=pcov -d pcov.directory=/code /src/dev/collect.php pcov "/code/$name")"
-    actual="$($run -d "extension=/src/build/php-$version/turbocov/turbocov.so" -d turbocov.directory=/code /src/dev/collect.php turbocov "/code/$name")"
+    actual="$($run -d "extension=/src/build/php-$version/turbocov/turbocov.so" -d turbocov.collect_paths=/code /src/dev/collect.php turbocov "/code/$name")"
 
     if [ "$expected" = "$actual" ]; then
         echo "same      $file"

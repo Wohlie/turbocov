@@ -24,6 +24,6 @@ docker run --rm --memory 2g --memory-swap 2g -v "$root:/src:ro" "$image" sh -euc
     row 'plain PHP'                      \$php /src/dev/bench.php none
     row 'PCOV, collecting'               \$php -d extension=pcov -d pcov.directory=/src/dev /src/dev/bench.php pcov
     row 'PCOV, file not listed'          \$php -d extension=pcov -d pcov.directory=/nowhere /src/dev/bench.php pcov
-    row 'turbocov, collecting'           \$php -d extension=$so -d turbocov.directory=/src/dev /src/dev/bench.php turbocov
-    row 'turbocov, file not listed'      \$php -d extension=$so -d turbocov.directory=/nowhere /src/dev/bench.php turbocov
+    row 'turbocov, collecting'           \$php -d extension=$so -d turbocov.collect_paths=/src/dev /src/dev/bench.php turbocov
+    row 'turbocov, file not listed'      \$php -d extension=$so -d turbocov.collect_paths=/nowhere /src/dev/bench.php turbocov
 "
