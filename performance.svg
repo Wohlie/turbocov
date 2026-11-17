@@ -15,21 +15,21 @@
     }
   </style>
 
-  <text class="note" x="120" y="18">Time added to a test suite that takes 8.7 s without coverage (870 tests, PHP 8.5)</text>
+  <text class="note" x="120" y="18">Time added to a test suite that takes 9.9 s without coverage (870 tests, PHP 8.5)</text>
 
   <line class="axis" x1="120" y1="32" x2="120" y2="164"/>
 
   <text class="name" x="108" y="61" text-anchor="end">turbocov</text>
-  <path class="bar" d="M120 44 h8 a4 4 0 0 1 4 4 v16 a4 4 0 0 1 -4 4 h-8 z"/>
-  <text class="value" x="142" y="61">+1.0 s   (+12 %)</text>
+  <path class="bar" d="M120 44 h6 a4 4 0 0 1 4 4 v16 a4 4 0 0 1 -4 4 h-6 z"/>
+  <text class="value" x="140" y="61">+1.0 s   (+10 %)</text>
 
   <text class="name" x="108" y="105" text-anchor="end">PCOV</text>
-  <path class="bar" d="M120 88 h137 a4 4 0 0 1 4 4 v16 a4 4 0 0 1 -4 4 h-137 z"/>
-  <text class="value" x="271" y="105">+12.1 s   (+140 %)</text>
+  <path class="bar" d="M120 88 h124 a4 4 0 0 1 4 4 v16 a4 4 0 0 1 -4 4 h-124 z"/>
+  <text class="value" x="258" y="105">+12.3 s   (+125 %)</text>
 
   <text class="name" x="108" y="149" text-anchor="end">Xdebug</text>
   <path class="bar" d="M120 132 h447 a4 4 0 0 1 4 4 v16 a4 4 0 0 1 -4 4 h-447 z"/>
-  <text class="value" x="581" y="149">+38.8 s   (+447 %)</text>
+  <text class="value" x="581" y="149">+43.4 s   (+439 %)</text>
 
-  <text class="note" x="120" y="186">Mean of five runs. PCOV 1.0.12, Xdebug in coverage mode, OPcache off.</text>
+  <text class="note" x="120" y="186">Mean of eight runs. PHPUnit 13.4, PCOV 1.0.12, Xdebug 3.5.3 in coverage mode, OPcache off.</text>
 </svg>

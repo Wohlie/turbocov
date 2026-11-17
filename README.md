@@ -24,18 +24,19 @@ turbocov does not replace the instruction loop of PHP. Code without probes runs 
 
 ![Time that a coverage driver adds to a test suite](performance.svg)
 
-The test suite of a PHPStan extension (870 tests, PHPUnit 10.5, PHP 8.5, OPcache off), mean of five runs:
+The test suite of a PHPStan extension (870 tests, PHPUnit 13.4, PHP 8.5, OPcache off), mean of eight runs:
 
 | Driver | Suite time | Added time |
 |---|---|---|
-| No coverage | 8.7 s | |
-| turbocov | 9.7 s | +1.0 s (+12 %) |
-| PCOV 1.0.12 | 20.8 s | +12.1 s (+140 %) |
-| Xdebug, coverage mode | 47.4 s | +38.8 s (+447 %) |
+| No coverage | 9.9 s | |
+| turbocov | 10.8 s | +1.0 s (+10 %) |
+| PCOV 1.0.12 | 22.2 s | +12.3 s (+125 %) |
+| Xdebug 3.5.3, coverage mode | 53.2 s | +43.4 s (+439 %) |
 
-- turbocov adds 12 times less time than PCOV and 37 times less time than Xdebug.
-- The clover report of turbocov is identical to the report of PCOV.
-- turbocov itself uses 0.08 s of the added 1.0 s: 1.6 million probe hits, the API calls and the compile hook. The coverage library of PHPUnit uses the rest, with each driver.
+- turbocov adds about 12 times less time than PCOV and more than 40 times less time than Xdebug.
+- turbocov runs with the driver of [shipmonk/turbocov-phpunit](https://github.com/shipmonk-rnd/turbocov-phpunit). PCOV and Xdebug run with the drivers of PHPUnit.
+- The clover report of turbocov is identical to the report of PCOV. This suite has no property hooks.
+- The probes fired 1.6 million times in the run. In an earlier measurement with timers in the extension, turbocov itself used 0.08 s of the added time. The coverage library of PHPUnit uses the rest, with each driver.
 
 ## Requirements
 
