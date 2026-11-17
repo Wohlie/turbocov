@@ -11,7 +11,7 @@ out="build/php-$version/$name"
 flags="--enable-turbocov"
 
 if [ "$name" = "pcov" ]; then
-    flags="$flags --enable-turbocov-as-pcov"
+    flags="$flags --enable-turbocov-impersonate-pcov"
 fi
 
 mkdir -p "$root/$out"

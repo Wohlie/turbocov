@@ -82,7 +82,7 @@ The settings apply when PHP compiles a file. Set them in `php.ini` or with `-d`,
 PHPUnit selects its PCOV driver when an extension with the name `pcov` is loaded. Build turbocov with that name:
 
 ```sh
-./configure --enable-turbocov --enable-turbocov-as-pcov
+./configure --enable-turbocov --enable-turbocov-impersonate-pcov
 ```
 
 The extension then registers as `pcov`. The functions are `\pcov\start()` and so on, and the settings are `pcov.enabled`, `pcov.directory` and `pcov.exclude`. PHPUnit and all other tools that support PCOV work without a change. Do not load the real PCOV at the same time.

@@ -13,7 +13,7 @@
         ],
         "configure-options": [
             {
-                "name": "enable-turbocov-as-pcov",
+                "name": "enable-turbocov-impersonate-pcov",
                 "description": "Register the extension, its functions and its INI settings under the name pcov",
                 "needs-value": false
             }
