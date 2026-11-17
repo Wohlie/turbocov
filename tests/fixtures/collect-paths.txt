@@ -1,3 +1,3 @@
 tests/fixtures/functions.php
 
-  tests/fixtures/missing.php
+  tests/fixtures/property-hooks.php  

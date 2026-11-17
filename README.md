@@ -72,7 +72,8 @@ The two path settings take one of these values:
 Rules:
 
 - A relative path starts at the working directory.
-- turbocov ignores a path that does not exist.
+- A path that does not exist is an error: `start()` throws an exception. A list file with no paths is not an error, and turbocov then collects nothing.
+- A pattern that is not valid is an error too.
 - Without `turbocov.collect_paths` turbocov collects nothing, and `start()` throws an exception.
 - The settings apply when PHP compiles a file. Set them in `php.ini` or with `-d`, not with `ini_set()`.
 

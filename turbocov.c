@@ -640,8 +640,8 @@ static void tc_paths_destroy(tc_paths *paths)
 	zend_hash_destroy(&paths->directories);
 }
 
-/* A path that does not exist is not an error: PHP cannot compile such a file. */
-static void tc_paths_add(tc_paths *paths, const char *entry, size_t length)
+/* A path that does not exist is an error: it is a typing mistake or an old list, and the user must know. */
+static bool tc_paths_add(tc_paths *paths, const char *setting, const char *entry, size_t length)
 {
 	char path[MAXPATHLEN];
 	char resolved[MAXPATHLEN];
@@ -657,15 +657,23 @@ static void tc_paths_add(tc_paths *paths, const char *entry, size_t length)
 		length--;
 	}
 
-	if (length == 0 || length >= MAXPATHLEN) {
-		return;
+	if (length == 0) {
+		return true;
+	}
+
+	if (length >= MAXPATHLEN) {
+		snprintf(tc_off_reason, sizeof(tc_off_reason), "%s has a path that is too long", setting);
+
+		return false;
 	}
 
 	memcpy(path, entry, length);
 	path[length] = '\0';
 
 	if (!VCWD_REALPATH(path, resolved) || VCWD_STAT(resolved, &status) != 0) {
-		return;
+		snprintf(tc_off_reason, sizeof(tc_off_reason), "%s has a path that does not exist: %s", setting, path);
+
+		return false;
 	}
 
 	resolved_length = strlen(resolved);
@@ -673,12 +681,14 @@ static void tc_paths_add(tc_paths *paths, const char *entry, size_t length)
 	if (!S_ISDIR(status.st_mode)) {
 		zend_hash_str_add_empty_element(&paths->files, resolved, resolved_length);
 
-		return;
+		return true;
 	}
 
 	if (resolved[resolved_length - 1] != DEFAULT_SLASH) {
 		if (resolved_length + 1 >= MAXPATHLEN) {
-			return;
+			snprintf(tc_off_reason, sizeof(tc_off_reason), "%s has a path that is too long", setting);
+
+			return false;
 		}
 
 		resolved[resolved_length++] = DEFAULT_SLASH;
@@ -686,11 +696,18 @@ static void tc_paths_add(tc_paths *paths, const char *entry, size_t length)
 	}
 
 	zend_hash_str_add_empty_element(&paths->directories, resolved, resolved_length);
+
+	return true;
 }
 
-/* The value is a list of paths, or "@" and the name of a file that has one path on each line. */
-static bool tc_paths_load(tc_paths *paths, const char *value)
+/*
+ * The value is a list of paths, or "@" and the name of a file that has one path on each line.
+ * On an error this function writes the reason to tc_off_reason and returns false.
+ */
+static bool tc_paths_load(tc_paths *paths, const char *setting, const char *value)
 {
+	bool valid = true;
+
 	if (!value || !*value) {
 		return true;
 	}
@@ -700,27 +717,29 @@ static bool tc_paths_load(tc_paths *paths, const char *value)
 		FILE *list = VCWD_FOPEN(value + 1, "r");
 
 		if (!list) {
+			snprintf(tc_off_reason, sizeof(tc_off_reason), "the list file %s of %s is not readable", value + 1, setting);
+
 			return false;
 		}
 
-		while (fgets(line, sizeof(line), list)) {
-			tc_paths_add(paths, line, strlen(line));
+		while (valid && fgets(line, sizeof(line), list)) {
+			valid = tc_paths_add(paths, setting, line, strlen(line));
 		}
 
 		fclose(list);
 
-		return true;
+		return valid;
 	}
 
-	while (*value) {
+	while (valid && *value) {
 		const char *end = strchr(value, ZEND_PATHS_SEPARATOR);
 		size_t length = end ? (size_t) (end - value) : strlen(value);
 
-		tc_paths_add(paths, value, length);
+		valid = tc_paths_add(paths, setting, value, length);
 		value += length + (end ? 1 : 0);
 	}
 
-	return true;
+	return valid;
 }
 
 static void tc_setup_paths(void)
@@ -732,16 +751,16 @@ static void tc_setup_paths(void)
 
 	if (!collect || !*collect) {
 		snprintf(tc_off_reason, sizeof(tc_off_reason), TC_INI_COLLECT_PATHS " is not set");
-	} else if (!tc_paths_load(&tc_collect_paths, collect)) {
-		snprintf(tc_off_reason, sizeof(tc_off_reason), "the list file %s of " TC_INI_COLLECT_PATHS " is not readable", collect + 1);
+
+		return;
+	}
+
+	if (!tc_paths_load(&tc_collect_paths, TC_INI_COLLECT_PATHS, collect)) {
+		return;
 	}
 
 #ifdef TC_INI_EXCLUDE_PATHS
-	if (!tc_paths_load(&tc_exclude_paths, INI_STR(TC_INI_EXCLUDE_PATHS))) {
-		snprintf(tc_off_reason, sizeof(tc_off_reason), "the list file %s of " TC_INI_EXCLUDE_PATHS " is not readable", INI_STR(TC_INI_EXCLUDE_PATHS) + 1);
-		zend_hash_clean(&tc_collect_paths.files);
-		zend_hash_clean(&tc_collect_paths.directories);
-	}
+	tc_paths_load(&tc_exclude_paths, TC_INI_EXCLUDE_PATHS, INI_STR(TC_INI_EXCLUDE_PATHS));
 #endif
 }
 
@@ -749,6 +768,7 @@ static void tc_setup_exclude_pattern(void)
 {
 	const char *exclude = INI_STR(TC_INI_EXCLUDE_PATTERN);
 	zend_string *pattern;
+	int error_reporting = EG(error_reporting);
 
 	tc_exclude_pattern = NULL;
 
@@ -756,11 +776,16 @@ static void tc_setup_exclude_pattern(void)
 		return;
 	}
 
+	/* PCRE gives a warning for a pattern that is not valid. The reason goes to the caller of start() and not to the output. */
+	EG(error_reporting) = 0;
 	pattern = zend_string_init(exclude, strlen(exclude), 0);
 	tc_exclude_pattern = pcre_get_compiled_regex_cache(pattern);
+	EG(error_reporting) = error_reporting;
 
 	if (tc_exclude_pattern) {
 		php_pcre_pce_incref(tc_exclude_pattern);
+	} else if (!*tc_off_reason) {
+		snprintf(tc_off_reason, sizeof(tc_off_reason), TC_INI_EXCLUDE_PATTERN " is not a valid pattern: %s", exclude);
 	}
 
 	zend_string_release(pattern);

@@ -3,7 +3,7 @@ turbocov.collect_paths takes a list of files and directories
 --EXTENSIONS--
 turbocov
 --INI--
-turbocov.collect_paths={PWD}/fixtures/functions.php:{PWD}/fixtures/missing.php
+turbocov.collect_paths={PWD}/fixtures/functions.php:{PWD}/fixtures/property-hooks.php
 --FILE--
 <?php
 \turbocov\start();
