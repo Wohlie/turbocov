@@ -178,3 +178,7 @@ dev/build.sh 8.5 pcov                        # build with the name pcov
 dev/compare-with-pcov.sh 8.5 path/File.php   # compare the line data with PCOV
 dev/bench.sh 8.5                             # compare the speed with plain PHP and PCOV
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

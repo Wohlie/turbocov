@@ -2,6 +2,7 @@
     "name": "shipmonk/turbocov",
     "description": "Line coverage driver for PHP that runs covered code at plain PHP speed",
     "type": "php-ext",
+    "license": "MIT",
     "require": {
         "php": "~8.4.0 || ~8.5.0"
     },
