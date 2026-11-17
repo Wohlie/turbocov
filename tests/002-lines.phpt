@@ -1,5 +1,5 @@
 --TEST--
-stop() returns the executed lines and executable_lines() returns every executable line
+stop() returns the executed lines and get_executable_lines() returns every executable line
 --EXTENSIONS--
 turbocov
 --INI--
@@ -9,7 +9,7 @@ turbocov.collect_paths={PWD}/fixtures
 $file = __DIR__ . '/fixtures/functions.php';
 require $file;
 
-var_dump(\turbocov\status());
+var_dump(\turbocov\get_disabled_reason());
 
 \turbocov\start();
 second(2);
@@ -17,14 +17,14 @@ $executed = \turbocov\stop();
 
 var_dump(array_keys($executed) === [$file]);
 
-$lines = array_replace(\turbocov\executable_lines([$file, __FILE__, 'missing.php'])[$file], $executed[$file]);
+$lines = array_replace(\turbocov\get_executable_lines([$file, __FILE__, 'missing.php'])[$file], $executed[$file]);
 ksort($lines);
 
 foreach ($lines as $line => $status) {
     echo $line, ' ', $status === 1 ? 'covered' : 'not covered', "\n";
 }
 
-echo json_encode(array_keys(\turbocov\executable_lines([$file, __FILE__, 'missing.php'])) === [$file]), "\n";
+echo json_encode(array_keys(\turbocov\get_executable_lines([$file, __FILE__, 'missing.php'])) === [$file]), "\n";
 ?>
 --EXPECT--
 NULL

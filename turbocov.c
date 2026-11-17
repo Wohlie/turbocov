@@ -290,22 +290,23 @@ static void tc_unregister_handlers(void)
 	}
 }
 
-static bool tc_paths_contain(const tc_paths *paths, zend_string *filename)
+/* Returns the entry of the list that has the file: the file itself or one of its parent directories. */
+static zend_string *tc_paths_find(const tc_paths *paths, zend_string *filename)
 {
 	zend_string *directory;
 
 	if (zend_hash_exists(&paths->files, filename)) {
-		return true;
+		return filename;
 	}
 
 	ZEND_HASH_MAP_FOREACH_STR_KEY(&paths->directories, directory) {
 		if (ZSTR_LEN(filename) > ZSTR_LEN(directory)
 			&& memcmp(ZSTR_VAL(filename), ZSTR_VAL(directory), ZSTR_LEN(directory)) == 0) {
-			return true;
+			return directory;
 		}
 	} ZEND_HASH_FOREACH_END();
 
-	return false;
+	return NULL;
 }
 
 static bool tc_matches_exclude_pattern(zend_string *filename)
@@ -339,8 +340,8 @@ static tc_file *tc_file_for(zend_string *filename)
 		return Z_PTR_P(known);
 	}
 
-	if (tc_paths_contain(&tc_collect_paths, filename)
-		&& !tc_paths_contain(&tc_exclude_paths, filename)
+	if (tc_paths_find(&tc_collect_paths, filename)
+		&& !tc_paths_find(&tc_exclude_paths, filename)
 		&& !(tc_exclude_pattern && tc_matches_exclude_pattern(filename))) {
 		file = pecalloc(1, sizeof(tc_file), 1);
 		file->name = zend_string_copy(filename);
@@ -778,7 +779,7 @@ PHP_NAMED_FUNCTION(tc_function_start)
 }
 /* }}} */
 
-/* {{{ array stats() */
+/* {{{ array get_stats() */
 PHP_NAMED_FUNCTION(tc_function_stats)
 {
 	zval *known;
@@ -962,7 +963,7 @@ static const zend_function_entry tc_functions[] = {
 	ZEND_NS_FENTRY(TURBOCOV_NAME, clear, tc_function_clear, tc_arginfo_clear, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, waiting, tc_function_waiting, tc_arginfo_array, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, memory, tc_function_memory, tc_arginfo_int, 0)
-	ZEND_NS_FENTRY(TURBOCOV_NAME, stats, tc_function_stats, tc_arginfo_array, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, get_stats, tc_function_stats, tc_arginfo_array, 0)
 	PHP_FE_END
 };
 
@@ -1006,8 +1007,8 @@ PHP_NAMED_FUNCTION(tc_function_stop)
 }
 /* }}} */
 
-/* {{{ array executable_lines(array $files) */
-PHP_NAMED_FUNCTION(tc_function_executable_lines)
+/* {{{ array get_executable_lines(array $files) */
+PHP_NAMED_FUNCTION(tc_function_get_executable_lines)
 {
 	HashTable *files;
 	zval *entry;
@@ -1035,8 +1036,8 @@ PHP_NAMED_FUNCTION(tc_function_executable_lines)
 }
 /* }}} */
 
-/* {{{ ?string status() */
-PHP_NAMED_FUNCTION(tc_function_status)
+/* {{{ ?string get_disabled_reason() */
+PHP_NAMED_FUNCTION(tc_function_get_disabled_reason)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
@@ -1048,19 +1049,60 @@ PHP_NAMED_FUNCTION(tc_function_status)
 }
 /* }}} */
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_executable_lines, 0, 1, IS_ARRAY, 0)
+/* {{{ ?string get_skip_reason(string $file) */
+PHP_NAMED_FUNCTION(tc_function_get_skip_reason)
+{
+	zend_string *filename;
+	zend_string *entry;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_STR(filename)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (*tc_off_reason) {
+		RETURN_STRING(tc_off_reason);
+	}
+
+	if (!tc_paths_find(&tc_collect_paths, filename)) {
+		RETURN_STRING(TC_INI_COLLECT_PATHS " does not have this file");
+	}
+
+	entry = tc_paths_find(&tc_exclude_paths, filename);
+
+	if (entry) {
+		RETURN_NEW_STR(zend_strpprintf(0, TC_INI_EXCLUDE_PATHS " has %s", ZSTR_VAL(entry)));
+	}
+
+	if (tc_exclude_pattern && tc_matches_exclude_pattern(filename)) {
+		RETURN_STRING(TC_INI_EXCLUDE_PATTERN " matches this file");
+	}
+
+	if (!zend_hash_exists(&tc_files, filename)) {
+		RETURN_STRING("PHP did not compile this file");
+	}
+
+	RETURN_NULL();
+}
+/* }}} */
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_get_executable_lines, 0, 1, IS_ARRAY, 0)
 	ZEND_ARG_TYPE_INFO(0, files, IS_ARRAY, 0)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_status, 0, 0, IS_STRING, 1)
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_get_disabled_reason, 0, 0, IS_STRING, 1)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(tc_arginfo_get_skip_reason, 0, 1, IS_STRING, 1)
+	ZEND_ARG_TYPE_INFO(0, file, IS_STRING, 0)
 ZEND_END_ARG_INFO()
 
 static const zend_function_entry tc_functions[] = {
 	ZEND_NS_FENTRY(TURBOCOV_NAME, start, tc_function_start, tc_arginfo_void, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, stop, tc_function_stop, tc_arginfo_array, 0)
-	ZEND_NS_FENTRY(TURBOCOV_NAME, executable_lines, tc_function_executable_lines, tc_arginfo_executable_lines, 0)
-	ZEND_NS_FENTRY(TURBOCOV_NAME, status, tc_function_status, tc_arginfo_status, 0)
-	ZEND_NS_FENTRY(TURBOCOV_NAME, stats, tc_function_stats, tc_arginfo_array, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, get_executable_lines, tc_function_get_executable_lines, tc_arginfo_get_executable_lines, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, get_disabled_reason, tc_function_get_disabled_reason, tc_arginfo_get_disabled_reason, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, get_skip_reason, tc_function_get_skip_reason, tc_arginfo_get_skip_reason, 0)
+	ZEND_NS_FENTRY(TURBOCOV_NAME, get_stats, tc_function_stats, tc_arginfo_array, 0)
 	PHP_FE_END
 };
 

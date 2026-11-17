@@ -15,7 +15,7 @@ $executed = \turbocov\stop();
 var_dump(array_keys($executed) === [$file]);
 echo json_encode($executed[$file]), "\n";
 
-$lines = \turbocov\executable_lines([$file])[$file];
+$lines = \turbocov\get_executable_lines([$file])[$file];
 ksort($lines);
 echo json_encode($lines), "\n";
 

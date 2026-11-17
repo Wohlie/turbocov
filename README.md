@@ -85,18 +85,22 @@ php -d turbocov.collect_paths=@changed.txt vendor/bin/phpunit
 ## Functions
 
 ```php
-\turbocov\status();            // null, or the reason why the collection is off
-\turbocov\start();             // start the collection
-\turbocov\stop();              // stop the collection; file => line => 1 for the lines that ran since start()
-\turbocov\executable_lines(    // file => line => -1 for each executable line of the given files
+\turbocov\get_disabled_reason();     // null, or the reason why the collection is off
+\turbocov\start();                   // start the collection
+\turbocov\stop();                    // stop the collection; file => line => 1 for the lines that ran since start()
+\turbocov\get_executable_lines(      // file => line => -1 for each executable line of the given files
     ['/absolute/path/File.php'],
 );
-\turbocov\stats();             // counters for diagnosis
+\turbocov\get_skip_reason(           // null, or the reason why this file has no data
+    '/absolute/path/File.php',
+);
+\turbocov\get_stats();               // counters for diagnosis
 ```
 
 - `stop()` returns only the lines that ran. It also arms the probes again, so the next `start()` begins with no data.
 - A file that PHP loaded during the collection is in the result of `stop()`, also when none of its lines ran.
-- `executable_lines()` knows only the files that PHP compiled and that are in `turbocov.collect_paths`.
+- `get_executable_lines()` knows only the files that PHP compiled and that are in `turbocov.collect_paths`. Other files are not in the result. `get_skip_reason()` gives the reason for one file.
+- The reasons are text for a person. Do not compare them in code.
 
 A coverage tool needs the lines that did not run only once for each file:
 
@@ -104,7 +108,7 @@ A coverage tool needs the lines that did not run only once for each file:
 $executed = \turbocov\stop();
 $newFiles = array_diff_key($executed, $seenFiles);
 
-foreach (\turbocov\executable_lines(array_keys($newFiles)) as $file => $lines) {
+foreach (\turbocov\get_executable_lines(array_keys($newFiles)) as $file => $lines) {
     $executed[$file] = array_replace($lines, $executed[$file]);
     $seenFiles[$file] = true;
 }
@@ -127,7 +131,7 @@ The extension then registers as `pcov`. PHPUnit and all other tools that support
 
 ## Limits
 
-- OPcache: turbocov puts its probes into the code that OPcache caches. This is not possible with `opcache.protect_memory=1`, with `opcache.file_cache`, with the JIT, and in a SAPI other than the CLI. In these cases turbocov turns the collection off. `status()` returns the reason, and the first call of `start()` gives a warning.
+- OPcache: turbocov puts its probes into the code that OPcache caches. This is not possible with `opcache.protect_memory=1`, with `opcache.file_cache`, with the JIT, and in a SAPI other than the CLI. In these cases turbocov turns the collection off. `get_disabled_reason()` returns the reason, and the first call of `start()` gives a warning.
 - OPcache optimizer: the optimizer can remove code, and a line without code is not executable. PCOV has the same behavior. Set `opcache.optimization_level=0` for line data that does not depend on the optimizer.
 - Other extensions that replace the instruction loop (PCOV, phpdbg) make turbocov slow. The results stay correct.
 - Xdebug: not tested together.

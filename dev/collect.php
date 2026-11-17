@@ -16,7 +16,7 @@ if ($namespace === 'pcov') {
     $lines = \pcov\collect(\pcov\inclusive, [$file])[$file] ?? null;
 } else {
     $executed = \turbocov\stop()[$file] ?? null;
-    $lines = $executed === null ? null : array_replace(\turbocov\executable_lines([$file])[$file], $executed);
+    $lines = $executed === null ? null : array_replace(\turbocov\get_executable_lines([$file])[$file], $executed);
 }
 
 ob_end_clean();

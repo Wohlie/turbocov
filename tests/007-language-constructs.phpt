@@ -16,7 +16,7 @@ $report = static function (string $file): void {
     ob_end_clean();
 
     $covered = array_keys($executed);
-    $uncovered = array_keys(array_diff_key(\turbocov\executable_lines([$file])[$file], $executed));
+    $uncovered = array_keys(array_diff_key(\turbocov\get_executable_lines([$file])[$file], $executed));
     sort($covered);
     sort($uncovered);
 

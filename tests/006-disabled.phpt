@@ -7,14 +7,14 @@ turbocov.enabled=0
 turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
-var_dump(\turbocov\status());
+var_dump(\turbocov\get_disabled_reason());
 
 \turbocov\start();
 require __DIR__ . '/fixtures/functions.php';
 second(2);
 
-var_dump(\turbocov\stop(), \turbocov\executable_lines([__DIR__ . '/fixtures/functions.php']));
-echo json_encode(\turbocov\stats()), "\n";
+var_dump(\turbocov\stop(), \turbocov\get_executable_lines([__DIR__ . '/fixtures/functions.php']));
+echo json_encode(\turbocov\get_stats()), "\n";
 ?>
 --EXPECT--
 string(21) "turbocov.enabled is 0"

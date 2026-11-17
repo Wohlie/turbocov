@@ -18,7 +18,7 @@ turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
 $file = __DIR__ . '/fixtures/functions.php';
-var_dump(\turbocov\status());
+var_dump(\turbocov\get_disabled_reason());
 require $file;
 var_dump(opcache_is_script_cached($file));
 

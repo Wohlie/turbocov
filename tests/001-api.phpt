@@ -12,7 +12,7 @@ sort($functions);
 echo implode("\n", $functions), "\n";
 
 try {
-    \turbocov\executable_lines('file.php');
+    \turbocov\get_executable_lines('file.php');
 } catch (TypeError $e) {
     echo $e->getMessage(), "\n";
 }
@@ -20,9 +20,10 @@ try {
 --EXPECT--
 bool(true)
 bool(true)
-turbocov\executable_lines
+turbocov\get_disabled_reason
+turbocov\get_executable_lines
+turbocov\get_skip_reason
+turbocov\get_stats
 turbocov\start
-turbocov\stats
-turbocov\status
 turbocov\stop
-turbocov\executable_lines(): Argument #1 ($files) must be of type array, string given
+turbocov\get_executable_lines(): Argument #1 ($files) must be of type array, string given

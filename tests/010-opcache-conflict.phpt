@@ -15,7 +15,7 @@ opcache.protect_memory=1
 turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
-var_dump(\turbocov\status());
+var_dump(\turbocov\get_disabled_reason());
 
 \turbocov\start();
 require __DIR__ . '/fixtures/functions.php';
