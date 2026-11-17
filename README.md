@@ -85,7 +85,8 @@ php -d turbocov.collect_paths=@changed.txt vendor/bin/phpunit
 ## Functions
 
 ```php
-\turbocov\start();                   // start the collection, or throw \turbocov\Exception
+\turbocov\ensure_can_collect();      // throw \turbocov\CannotCollectException when the collection cannot work
+\turbocov\start();                   // start the collection; throws the same exception
 \turbocov\stop();                    // stop the collection; file => line => 1 for the lines that ran since start()
 \turbocov\get_executable_lines(      // file => line => -1 for each executable line of the given files
     ['/absolute/path/File.php'],
@@ -95,7 +96,8 @@ php -d turbocov.collect_paths=@changed.txt vendor/bin/phpunit
 );
 ```
 
-- `start()` throws `\turbocov\Exception` when turbocov cannot collect coverage. The message has the reason, for example `turbocov.collect_paths is not set`. `\turbocov\Exception` extends `RuntimeException`.
+- `ensure_can_collect()` and `start()` throw `\turbocov\CannotCollectException` when turbocov cannot collect coverage. The message has the reason, for example `turbocov.collect_paths is not set`. The class extends `RuntimeException`.
+- `ensure_can_collect()` does not start the collection. A coverage tool calls it one time before the first test.
 - `stop()` returns only the lines that ran. It also arms the probes again, so the next `start()` begins with no data.
 - A file that PHP loaded during the collection is in the result of `stop()`, also when none of its lines ran.
 - `get_executable_lines()` knows only the files that PHP compiled and that are in `turbocov.collect_paths`. Other files are not in the result.

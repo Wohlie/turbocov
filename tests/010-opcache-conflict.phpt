@@ -1,5 +1,5 @@
 --TEST--
-With read-only OPcache memory start() throws an exception
+With read-only OPcache memory ensure_can_collect() and start() throw an exception
 --EXTENSIONS--
 turbocov
 --SKIPIF--
@@ -15,11 +15,11 @@ opcache.protect_memory=1
 turbocov.collect_paths={PWD}/fixtures
 --FILE--
 <?php
-for ($call = 0; $call < 2; $call++) {
+foreach (['ensure_can_collect', 'start'] as $function) {
     try {
-        \turbocov\start();
-    } catch (\turbocov\Exception $e) {
-        echo $e->getMessage(), "\n";
+        ("turbocov\\$function")();
+    } catch (\turbocov\CannotCollectException $e) {
+        echo $function, '(): ', $e->getMessage(), "\n";
     }
 }
 
@@ -30,7 +30,7 @@ echo json_encode(\turbocov\stop()), "\n";
 echo json_encode(\turbocov\get_status()["collecting"]), "\n";
 ?>
 --EXPECTF--
-turbocov cannot collect coverage: opcache.protect_memory makes the compiled code read-only
-turbocov cannot collect coverage: opcache.protect_memory makes the compiled code read-only
+ensure_can_collect(): turbocov cannot collect coverage: opcache.protect_memory makes the compiled code read-only
+start(): turbocov cannot collect coverage: opcache.protect_memory makes the compiled code read-only
 []
 false

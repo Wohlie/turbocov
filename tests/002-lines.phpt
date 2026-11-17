@@ -9,6 +9,9 @@ turbocov.collect_paths={PWD}/fixtures
 $file = __DIR__ . '/fixtures/functions.php';
 require $file;
 
+\turbocov\ensure_can_collect();
+var_dump(\turbocov\get_status()['collecting']);
+
 \turbocov\start();
 second(2);
 $executed = \turbocov\stop();
@@ -25,6 +28,7 @@ foreach ($lines as $line => $status) {
 echo json_encode(array_keys(\turbocov\get_executable_lines([$file, __FILE__, 'missing.php'])) === [$file]), "\n";
 ?>
 --EXPECT--
+bool(false)
 bool(true)
 5 covered
 6 not covered

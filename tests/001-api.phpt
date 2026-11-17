@@ -6,7 +6,7 @@ turbocov
 <?php
 var_dump(extension_loaded('turbocov'));
 var_dump(is_string(phpversion('turbocov')));
-var_dump(is_subclass_of(\turbocov\Exception::class, RuntimeException::class));
+var_dump(is_subclass_of(\turbocov\CannotCollectException::class, RuntimeException::class));
 
 $functions = get_extension_funcs('turbocov');
 sort($functions);
@@ -22,6 +22,7 @@ try {
 bool(true)
 bool(true)
 bool(true)
+turbocov\ensure_can_collect
 turbocov\get_debug_info
 turbocov\get_executable_lines
 turbocov\get_status

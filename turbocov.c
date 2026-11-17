@@ -766,6 +766,28 @@ static void tc_setup_exclude_pattern(void)
 	zend_string_release(pattern);
 }
 
+#ifndef TURBOCOV_IMPERSONATE_PCOV
+static bool tc_ensure_can_collect(void)
+{
+	if (*tc_off_reason) {
+		zend_throw_exception_ex(tc_exception_ce, 0, "turbocov cannot collect coverage: %s", tc_off_reason);
+
+		return false;
+	}
+
+	return true;
+}
+
+/* {{{ void ensure_can_collect() */
+PHP_NAMED_FUNCTION(tc_function_ensure_can_collect)
+{
+	ZEND_PARSE_PARAMETERS_NONE();
+
+	tc_ensure_can_collect();
+}
+/* }}} */
+#endif
+
 /* {{{ void start() */
 PHP_NAMED_FUNCTION(tc_function_start)
 {
@@ -778,8 +800,7 @@ PHP_NAMED_FUNCTION(tc_function_start)
 		zend_error(E_WARNING, TURBOCOV_NAME ": the coverage collection is off, because %s", tc_off_reason);
 	}
 #else
-	if (*tc_off_reason) {
-		zend_throw_exception_ex(tc_exception_ce, 0, "turbocov cannot collect coverage: %s", tc_off_reason);
+	if (!tc_ensure_can_collect()) {
 		RETURN_THROWS();
 	}
 #endif
@@ -1263,6 +1284,7 @@ ZEND_END_ARG_INFO()
 
 
 static const zend_function_entry tc_functions[] = {
+	ZEND_NS_FENTRY(TURBOCOV_NAME, ensure_can_collect, tc_function_ensure_can_collect, tc_arginfo_void, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, start, tc_function_start, tc_arginfo_void, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, stop, tc_function_stop, tc_arginfo_array, 0)
 	ZEND_NS_FENTRY(TURBOCOV_NAME, get_executable_lines, tc_function_get_executable_lines, tc_arginfo_get_executable_lines, 0)
@@ -1299,7 +1321,7 @@ static PHP_MINIT_FUNCTION(turbocov)
 #else
 	zend_class_entry exception_ce;
 
-	INIT_NS_CLASS_ENTRY(exception_ce, TURBOCOV_NAME, "Exception", NULL);
+	INIT_NS_CLASS_ENTRY(exception_ce, TURBOCOV_NAME, "CannotCollectException", NULL);
 	tc_exception_ce = zend_register_internal_class_ex(&exception_ce, spl_ce_RuntimeException);
 #endif
 
