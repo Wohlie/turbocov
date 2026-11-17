@@ -1413,6 +1413,11 @@ static const char *tc_find_opcache_conflict(void)
 		return "the JIT of OPcache is on";
 	}
 
+	/* The optimizer removes code. A line without code has no probe, and the report shows it as not covered. */
+	if (INI_INT("opcache.optimization_level") != 0) {
+		return "the optimizer of OPcache is on. Set opcache.optimization_level=0";
+	}
+
 	return NULL;
 }
 

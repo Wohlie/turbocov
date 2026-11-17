@@ -12,6 +12,7 @@ if (!extension_loaded('Zend OPcache')) {
 opcache.enable=1
 opcache.enable_cli=1
 opcache.jit=disable
+opcache.optimization_level=0
 opcache.protect_memory=0
 opcache.file_update_protection=0
 turbocov.collect_paths={PWD}/fixtures
