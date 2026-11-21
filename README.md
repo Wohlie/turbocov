@@ -110,24 +110,7 @@ turbocov does not replace the instruction loop of PHP. Code without probes runs 
 
 **The problem:** PHPUnit before 13.3 cannot load a custom coverage driver. It only knows PCOV and Xdebug.
 
-**The hacky solution:** install turbocov in a mode where it pretends to be PCOV. PHPUnit then uses it without any change:
-
-```sh
-pie install shipmonk/turbocov --enable-turbocov-impersonate-pcov
-```
-
-Then run PHPUnit the same way as with PCOV:
-
-```sh
-php -d pcov.directory=src vendor/bin/phpunit --coverage-html coverage
-```
-
-Notes:
-- You do not need `shipmonk/turbocov-phpunit` or the `driver` attribute in `phpunit.xml`.
-- Remove the real PCOV first. Both cannot be loaded at the same time.
-- `pcov.directory` is required. turbocov does not guess `src` like PCOV does.
-- PIE warns that it cannot detect the extension after the install. That is expected, because PHP now lists it as `pcov`.
-- This mode is a temporary aid, and a later version can remove it.
+**The hacky solution:** install turbocov in a mode where it pretends to be PCOV. PHPUnit then uses it without any change. See [PCOV mode for older PHPUnit](docs/pcov-mode.md) for the steps.
 
 ## Limitations
 
