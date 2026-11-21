@@ -10,11 +10,11 @@ jobs:
     tests:
         name: PHP ${{ matrix.php-version }}${{ matrix.thread-safety == 'zts' && ' ZTS' || '' }}, ${{ matrix.build }}${{ matrix.arch == 'arm64' && ', arm64' || '' }}
         runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-        container: php:${{ matrix.php-version }}-${{ matrix.thread-safety == 'zts' && 'zts' || 'cli' }}
+        container: php:${{ matrix.php-version }}-${{ matrix.thread-safety == 'zts' && matrix.php-version != '8.6' && 'zts' || 'cli' }}
         strategy:
             fail-fast: false
             matrix:
-                php-version: [ '8.4', '8.5' ]
+                php-version: [ '8.4', '8.5', '8.6' ]
                 build: [ turbocov, pcov ]
                 arch: [ x86_64, arm64 ]
                 thread-safety: [ nts, zts ]
@@ -22,23 +22,31 @@ jobs:
                     -
                         build: pcov
                         arch: arm64
+                    -
+                        # Each official image of PHP 8.6 is a thread-safe build.
+                        php-version: '8.6'
+                        thread-safety: nts
         steps:
             -
                 name: Checkout code
                 uses: actions/checkout@v6
             -
                 # Two tests need these extensions as files. No ini file loads them.
+                # The image of PHP 8.6 has no pecl command, and PCOV and Xdebug have no release for PHP 8.6.
                 name: Install PCOV and Xdebug
-                if: matrix.build == 'turbocov'
+                if: matrix.build == 'turbocov' && matrix.php-version != '8.6'
                 run: pecl install pcov-1.0.12 xdebug-3.5.3 > /dev/null
             -
-                # One test starts a second PHP thread with this extension.
+                # One test starts a second PHP thread with this extension. parallel 1.2.15 crashes on PHP 8.6.
                 name: Install parallel
-                if: matrix.build == 'turbocov' && matrix.thread-safety == 'zts'
+                if: matrix.build == 'turbocov' && matrix.thread-safety == 'zts' && matrix.php-version != '8.6'
                 run: pecl install parallel-1.2.15 > /dev/null
             -
                 name: Build and test
                 run: dev/build-in-place.sh ${{ matrix.build }}
+                env:
+                    # The tests that load PCOV, Xdebug and parallel
+                    EXPECT_SKIPS: ${{ matrix.build == 'turbocov' && matrix.php-version == '8.6' && '3' || '0' }}
 
     clang:
         name: PHP ${{ matrix.php-version }} built with Clang${{ matrix.arch == 'arm64' && ', arm64' || '' }}
@@ -47,7 +55,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                php-version: [ 8.4.27, 8.5.12 ]
+                php-version: [ 8.4.27, 8.5.12, 8.6.0 ]
                 arch: [ x86_64, arm64 ]
                 include:
                     -
@@ -56,6 +64,9 @@ jobs:
                     -
                         php-version: 8.5.12
                         sha256: 08bc2eba2a588654ade1357174aa646b761556c862dda0678345ee29ed481209
+                    -
+                        php-version: 8.6.0
+                        sha256: 5f84beaa3d763aee1e4feed99bf54ec692c383b322e25626807b589238c3a087
         env:
             CC: clang
         steps:
@@ -95,6 +106,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
+                php-version: [ 8.5.12, 8.6.0 ]
                 build: [ turbocov, pcov ]
                 arch: [ x86_64, arm64 ]
                 exclude:
@@ -105,6 +117,9 @@ jobs:
                     -
                         php-version: 8.5.12
                         sha256: 08bc2eba2a588654ade1357174aa646b761556c862dda0678345ee29ed481209
+                    -
+                        php-version: 8.6.0
+                        sha256: 5f84beaa3d763aee1e4feed99bf54ec692c383b322e25626807b589238c3a087
         env:
             # Clang cannot build the tail-call VM of PHP 8.5 with AddressSanitizer.
             CC: gcc
@@ -164,7 +179,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                php-version: [ '8.4', '8.5' ]
+                php-version: [ '8.4', '8.5', '8.6' ]
         steps:
             -
                 name: Checkout code
