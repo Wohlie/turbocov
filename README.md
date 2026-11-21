@@ -80,6 +80,9 @@ PCOV and Xdebug do work for each instruction that PHP executes. turbocov does wo
 
 turbocov does not replace the instruction loop of PHP. Code without probes runs as if the extension is not loaded.
 
+A line of a multi-line condition, ternary, `??` or `match` is reported only when its own code runs.
+PCOV and Xdebug also report such a line when PHP skips it: for example the `|| $b` line of a two-line `$a || $b` when `$a` is true.
+
 ## Functions
 
 ```php
@@ -152,7 +155,7 @@ The scripts in `dev/` need Docker.
 ```sh
 RUN_TESTS=1 dev/build.sh 8.5                 # build and run the tests
 dev/build.sh 8.5 pcov                        # build with the name pcov
-dev/compare-with-pcov.sh 8.5 path/File.php   # compare the line data with PCOV
+dev/compare-with-pcov.sh 8.5 path/File.php   # check the line data against PCOV
 dev/bench.sh 8.5                             # compare the speed with plain PHP and PCOV
 ```
 

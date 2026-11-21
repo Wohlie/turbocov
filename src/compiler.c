@@ -9,6 +9,9 @@ zend_ulong tc_stat_jump_table_files;
 
 static zend_ulong tc_ignored_opcodes[256 / ZEND_BITSET_ELM_SIZE];
 
+/* Opcode => the operand (1 or 2) that makes the opcode a consumer when it is a temporary value, or 0. */
+static uint8_t tc_consumer_operand[256];
+
 static zend_op_array *(*tc_orig_compile_file)(zend_file_handle *file_handle, int type);
 static zend_op_array *(*tc_orig_compile_string)(zend_string *source_string, const char *filename, zend_compile_position position);
 
@@ -23,8 +26,37 @@ void tc_fill_ignored_opcodes(void)
 		ZEND_EXT_STMT, ZEND_EXT_FCALL_BEGIN, ZEND_EXT_FCALL_END, ZEND_EXT_NOP, ZEND_BIND_GLOBAL,
 	};
 
+	/*
+	 * These opcodes only use the value of the expression that PHP compiled before them. Their own token has no operand after that expression.
+	 * An opcode with an operand after the expression must stay out: IS_SMALLER has its operands in reverse order for ">", FE_FETCH has "as $value".
+	 * MUL, the bitwise opcodes and the equality opcodes must stay out too: PHP swaps their operands when the first one is a temporary value
+	 * and the second one is a variable. Then "(expression) === $variable" looks the same as "$variable === (expression)".
+	 */
+	static const uint8_t first_operand[] = {
+		ZEND_JMPZ, ZEND_JMPNZ, ZEND_JMPZ_EX, ZEND_JMPNZ_EX, ZEND_JMP_SET, ZEND_COALESCE, ZEND_JMP_NULL,
+		ZEND_BW_NOT, ZEND_CAST, ZEND_QM_ASSIGN, ZEND_ECHO, ZEND_STRLEN, ZEND_COUNT,
+#if PHP_VERSION_ID >= 80500
+		/* Before PHP 8.5 the compiler also makes BOOL from "X == true" and BOOL_NOT from "X == false", where the token is after the expression. */
+		ZEND_BOOL, ZEND_BOOL_NOT,
+#endif
+		ZEND_RETURN, ZEND_RETURN_BY_REF, ZEND_GENERATOR_RETURN,
+		ZEND_INIT_ARRAY, ZEND_ADD_ARRAY_ELEMENT, ZEND_ADD_ARRAY_UNPACK, ZEND_FETCH_LIST_R,
+		ZEND_SEND_VAL_EX, ZEND_SEND_VAR_NO_REF, ZEND_SEND_VAR_NO_REF_EX,
+	};
+	static const uint8_t second_operand[] = {
+		ZEND_ADD, ZEND_SUB, ZEND_DIV, ZEND_MOD, ZEND_SL, ZEND_SR, ZEND_CONCAT, ZEND_POW,
+	};
+
 	for (size_t i = 0; i < sizeof(ignored); i++) {
 		zend_bitset_incl(tc_ignored_opcodes, ignored[i]);
+	}
+
+	for (size_t i = 0; i < sizeof(first_operand); i++) {
+		tc_consumer_operand[first_operand[i]] = 1;
+	}
+
+	for (size_t i = 0; i < sizeof(second_operand); i++) {
+		tc_consumer_operand[second_operand[i]] = 2;
 	}
 }
 
@@ -69,12 +101,108 @@ static void tc_files_dtor(zval *zv)
 	}
 }
 
+/*
+ * PHP gives an opcode that only uses the value of an expression the line of the last operand of that expression.
+ * The jumps that skip this operand go to that opcode. Example: the JMPZ of "if ($a\n || $b)" has the line of $b, and it runs also when $a is true.
+ * Such opcodes get no probe in the block after the operand. The operand has its own probe, and it always runs before control falls into that block.
+ * This function returns the line of the operand: the last line of the block before, when that block continues in this block.
+ */
+static uint32_t tc_operand_line(const zend_cfg *cfg, int number, uint32_t last_line)
+{
+	const zend_basic_block *block = &cfg->blocks[number];
+
+	if (last_line == 0 || (block->flags & (ZEND_BB_START | ZEND_BB_RECV_ENTRY | ZEND_BB_CATCH | ZEND_BB_FINALLY | ZEND_BB_FINALLY_END))) {
+		return 0;
+	}
+
+	for (int i = 0; i < (block - 1)->successors_count; i++) {
+		if ((block - 1)->successors[i] == number) {
+			return last_line;
+		}
+	}
+
+	return 0;
+}
+
+static bool tc_sends_argument(uint8_t opcode)
+{
+	switch (opcode) {
+		case ZEND_SEND_VAL:
+		case ZEND_SEND_VAL_EX:
+		case ZEND_SEND_VAR:
+		case ZEND_SEND_VAR_EX:
+		case ZEND_SEND_REF:
+		case ZEND_SEND_VAR_NO_REF:
+		case ZEND_SEND_VAR_NO_REF_EX:
+		case ZEND_SEND_FUNC_ARG:
+		case ZEND_SEND_UNPACK:
+		case ZEND_SEND_ARRAY:
+		case ZEND_SEND_USER:
+			return true;
+		default:
+			return false;
+	}
+}
+
+/* Checks the opcodes from the given one to the next opcode of a different line. */
+static bool tc_line_has_only_consumers(const zend_op *opline, const zend_op *end)
+{
+	uint32_t line = opline->lineno;
+	bool open_result = false;
+
+	for (; opline < end; opline++) {
+		uint8_t type;
+
+		if (zend_bitset_in(tc_ignored_opcodes, opline->opcode)) {
+			/* An ignored opcode with such an operand shows that the line has one more operand, for example a variable that is an argument. */
+			if (opline->lineno == line && ((opline->op1_type | opline->op2_type) & (IS_CONST | IS_CV))) {
+				return false;
+			}
+
+			open_result = false;
+
+			continue;
+		}
+
+		if (opline->lineno != line) {
+			break;
+		}
+
+		if (opline->opcode == ZEND_JMP) {
+			/* A value that waits for its consumer shows that this jump is inside an expression. Thus it is not a "break" or a "continue". */
+			if (!open_result) {
+				return false;
+			}
+
+			open_result = false;
+
+			continue;
+		}
+
+		type = tc_consumer_operand[opline->opcode] == 1 ? opline->op1_type : (tc_consumer_operand[opline->opcode] == 2 ? opline->op2_type : 0);
+
+		if (!(type & (IS_TMP_VAR | IS_VAR))) {
+			return false;
+		}
+
+		/* A variable as the next argument is after the expression, and PHP can give its opcode the line of the first argument. */
+		if (tc_sends_argument(opline->opcode) && opline + 1 < end && tc_sends_argument((opline + 1)->opcode) && (opline + 1)->op1_type == IS_CV) {
+			return false;
+		}
+
+		open_result = (opline->result_type & (IS_TMP_VAR | IS_VAR)) != 0;
+	}
+
+	return true;
+}
+
 static tc_unit *tc_install_probes(zend_op_array *op_array, tc_file *file)
 {
 	zend_arena *arena = zend_arena_create(64 * 1024);
 	zend_cfg cfg;
 	zend_op *limit = op_array->opcodes + op_array->last;
 	tc_unit *unit = pecalloc(1, sizeof(tc_unit), 1);
+	uint32_t last_line = 0;
 	zval uncovered;
 
 	ZVAL_LONG(&uncovered, TC_UNCOVERED);
@@ -94,11 +222,18 @@ static tc_unit *tc_install_probes(zend_op_array *op_array, tc_file *file)
 		zend_op *end = opline + block->len;
 		bool block_entry = true;
 		uint32_t probed_line = 0;
+		uint32_t operand_line;
+		bool consumers = false;
 
 		/* PCOV does not report unreachable code, and such code cannot run. */
 		if (!(block->flags & ZEND_BB_REACHABLE)) {
+			last_line = 0;
+
 			continue;
 		}
+
+		operand_line = tc_operand_line(&cfg, i, last_line);
+		last_line = 0;
 
 		for (; opline < end; opline++) {
 			if (zend_bitset_in(tc_ignored_opcodes, opline->opcode)) {
@@ -107,12 +242,32 @@ static tc_unit *tc_install_probes(zend_op_array *op_array, tc_file *file)
 					block_entry = true;
 				}
 
+				if ((opline->op1_type | opline->op2_type) & (IS_CONST | IS_CV)) {
+					operand_line = 0;
+				}
+
 				continue;
 			}
 
 			zend_hash_index_add(&file->lines, opline->lineno, &uncovered);
+			last_line = opline->lineno;
 
 			if (block_entry || opline->lineno != probed_line) {
+				consumers = opline->lineno == operand_line && tc_line_has_only_consumers(opline, end);
+			}
+
+			/*
+			 * A variable or a constant can be an operand on the operand line, and an opcode of a different line can use it.
+			 * After such an opcode, the line of a consumer can be the line of that operand.
+			 */
+			if (!consumers && ((opline->op1_type | opline->op2_type) & (IS_CONST | IS_CV))) {
+				operand_line = 0;
+			}
+
+			if (consumers) {
+				block_entry = false;
+				probed_line = opline->lineno;
+			} else if (block_entry || opline->lineno != probed_line) {
 				tc_probe *probe = &unit->probes[unit->count];
 
 				probe->handler = opline->handler;
