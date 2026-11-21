@@ -305,6 +305,13 @@ static tc_unit *tc_install_probes(zend_op_array *op_array, tc_file *file)
  * pass_two() gave every opcode the ZEND_USER_OPCODE handler, because all user opcode handlers are registered.
  * This function runs while no handler is registered, thus zend_vm_set_opcode_handler() restores the real handlers.
  */
+static void tc_process_op_array(zend_op_array *op_array);
+
+static void tc_process_const_closure(zend_op_array *op_array, void *context)
+{
+	tc_process_op_array(op_array);
+}
+
 static void tc_process_op_array(zend_op_array *op_array)
 {
 	tc_file *file;
@@ -340,6 +347,8 @@ static void tc_process_op_array(zend_op_array *op_array)
 	for (uint32_t i = 0; i < op_array->num_dynamic_func_defs; i++) {
 		tc_process_op_array(op_array->dynamic_func_defs[i]);
 	}
+
+	tc_visit_op_array_closures(op_array, tc_process_const_closure, NULL);
 }
 
 /*
@@ -388,6 +397,8 @@ static void tc_process_class(zend_class_entry *ce)
 			}
 		} ZEND_HASH_FOREACH_END();
 	}
+
+	tc_visit_class_closures(ce, tc_process_const_closure, NULL);
 }
 
 static void tc_after_compile(zend_op_array *main_op_array, uint32_t first_function, uint32_t first_class)

@@ -33,9 +33,16 @@ static void tc_debug_add_unit(zval *units, tc_unit *unit, zend_op_array *op_arra
 	add_next_index_zval(units, &entry);
 }
 
+typedef struct _tc_debug_context {
+	zval *units;
+	HashTable seen; /* opcodes address => visited */
+	tc_file *file;
+} tc_debug_context;
+
 /* A unit does not keep the name of its function. This function finds the name in the tables of the engine. */
-static void tc_debug_visit(zval *units, HashTable *seen, tc_file *file, zend_op_array *op_array)
+static void tc_debug_visit(zend_op_array *op_array, void *context)
 {
+	tc_debug_context *debug = context;
 	zend_ulong key;
 	tc_unit *unit;
 
@@ -44,30 +51,37 @@ static void tc_debug_visit(zval *units, HashTable *seen, tc_file *file, zend_op_
 	}
 
 	key = (zend_ulong) (uintptr_t) op_array->opcodes;
+
+	if (zend_hash_index_exists(&debug->seen, key)) {
+		return;
+	}
+
+	zend_hash_index_add_empty_element(&debug->seen, key);
 	unit = zend_hash_index_find_ptr(&tc_units, key);
 
-	if (unit && unit->file == file && !zend_hash_index_exists(seen, key)) {
-		zend_hash_index_add_empty_element(seen, key);
-		tc_debug_add_unit(units, unit, op_array);
+	if (unit && unit->file == debug->file) {
+		tc_debug_add_unit(debug->units, unit, op_array);
 	}
 
 	for (uint32_t i = 0; i < op_array->num_dynamic_func_defs; i++) {
-		tc_debug_visit(units, seen, file, op_array->dynamic_func_defs[i]);
+		tc_debug_visit(op_array->dynamic_func_defs[i], debug);
 	}
+
+	tc_visit_op_array_closures(op_array, tc_debug_visit, debug);
 }
 
 static void tc_debug_units(zval *units, tc_file *file)
 {
-	HashTable seen;
+	tc_debug_context debug = {.units = units, .file = file};
 	zend_function *function;
 	zend_class_entry *ce;
 	zend_ulong key;
 	tc_unit *unit;
 
-	zend_hash_init(&seen, 16, NULL, NULL, 0);
+	zend_hash_init(&debug.seen, 16, NULL, NULL, 0);
 
 	ZEND_HASH_MAP_FOREACH_PTR(EG(function_table), function) {
-		tc_debug_visit(units, &seen, file, &function->op_array);
+		tc_debug_visit(&function->op_array, &debug);
 	} ZEND_HASH_FOREACH_END();
 
 	ZEND_HASH_MAP_FOREACH_PTR(EG(class_table), ce) {
@@ -76,7 +90,7 @@ static void tc_debug_units(zval *units, tc_file *file)
 		}
 
 		ZEND_HASH_MAP_FOREACH_PTR(&ce->function_table, function) {
-			tc_debug_visit(units, &seen, file, &function->op_array);
+			tc_debug_visit(&function->op_array, &debug);
 		} ZEND_HASH_FOREACH_END();
 
 		if (ce->num_hooked_props) {
@@ -86,22 +100,24 @@ static void tc_debug_units(zval *units, tc_file *file)
 				if (property->hooks) {
 					for (uint32_t i = 0; i < ZEND_PROPERTY_HOOK_COUNT; i++) {
 						if (property->hooks[i]) {
-							tc_debug_visit(units, &seen, file, &property->hooks[i]->op_array);
+							tc_debug_visit(&property->hooks[i]->op_array, &debug);
 						}
 					}
 				}
 			} ZEND_HASH_FOREACH_END();
 		}
+
+		tc_visit_class_closures(ce, tc_debug_visit, &debug);
 	} ZEND_HASH_FOREACH_END();
 
 	/* The code of a file outside of all functions, and the closures in it, are in no table. */
 	ZEND_HASH_FOREACH_NUM_KEY_PTR(&tc_units, key, unit) {
-		if (unit->file == file && unit->opcodes && !zend_hash_index_exists(&seen, key)) {
+		if (unit->file == file && unit->opcodes && !zend_hash_index_exists(&debug.seen, key)) {
 			tc_debug_add_unit(units, unit, NULL);
 		}
 	} ZEND_HASH_FOREACH_END();
 
-	zend_hash_destroy(&seen);
+	zend_hash_destroy(&debug.seen);
 }
 
 static int tc_compare_lines(const void *left, const void *right)

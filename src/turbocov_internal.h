@@ -145,6 +145,17 @@ TC_LOCAL void tc_compiler_deactivate(void);
 TC_LOCAL bool tc_adopt_op_array(zend_op_array *op_array, const zend_op *opline);
 TC_LOCAL void tc_op_array_dtor(zend_op_array *op_array);
 
+/* const_closures.c: the closures in the constant expressions of an op array or of a class */
+typedef void (*tc_op_array_visitor)(zend_op_array *op_array, void *context);
+
+#if PHP_VERSION_ID >= 80500
+TC_LOCAL void tc_visit_op_array_closures(zend_op_array *op_array, tc_op_array_visitor visitor, void *context);
+TC_LOCAL void tc_visit_class_closures(zend_class_entry *ce, tc_op_array_visitor visitor, void *context);
+#else
+# define tc_visit_op_array_closures(op_array, visitor, context) ((void) (visitor))
+# define tc_visit_class_closures(ce, visitor, context)          ((void) (visitor))
+#endif
+
 /* paths.c: the settings that select the files */
 TC_LOCAL void tc_paths_activate(void);
 TC_LOCAL void tc_paths_deactivate(void);
