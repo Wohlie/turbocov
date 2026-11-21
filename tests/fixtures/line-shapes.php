@@ -74,24 +74,33 @@ function first_arm($a) {
         default => 'other',
     };
 }
-function closure_end() {
+function call_end() {
     return array_map(function ($item) {
+        throw new RuntimeException('item');
+    }, [1]);
+}
+function closure_end() {
+    $closure = function ($item) {
         if ($item > 0) {
             throw new RuntimeException('positive');
         }
-    }, [1]);
+    };
+    return $closure(1);
 }
 function immediate_call() {
     return (function () {
         return 1;
     })();
 }
+function sum($a, $b, $c) {
+    return $a + $b + $c;
+}
 function not_listed(
     $a,
     $b = 2
 ) {
     global $lineShapes;
-    return max(
+    return sum(
         $a,
         3,
         $b
