@@ -27,6 +27,15 @@ static void tc_visit_ast(zend_ast *ast, tc_op_array_visitor visitor, void *conte
 		return;
 	}
 
+#if PHP_VERSION_ID >= 80600
+	/* The arguments of a partial function application are in a member of the node, not in its children. */
+	if (ast->kind == ZEND_AST_CALLABLE_CONVERT) {
+		tc_visit_ast(((zend_ast_fcc *) ast)->args, visitor, context);
+
+		return;
+	}
+#endif
+
 	if (zend_ast_is_list(ast)) {
 		zend_ast_list *list = zend_ast_get_list(ast);
 
@@ -77,19 +86,14 @@ void tc_visit_op_array_closures(zend_op_array *op_array, tc_op_array_visitor vis
 		tc_visit_value(&op_array->literals[i], visitor, context);
 	}
 
-	if (op_array->static_variables) {
-		zval *value;
-
-		ZEND_HASH_FOREACH_VAL(op_array->static_variables, value) {
-			tc_visit_value(value, visitor, context);
-		} ZEND_HASH_FOREACH_END();
-	}
-
 	/* The attributes of the function and of its parameters. */
 	tc_visit_attributes(op_array->attributes, visitor, context);
 
-	/* The attributes of a global constant are a pointer in a literal of the opcode that declares the constant. */
-	if (op_array->fn_flags & ZEND_ACC_PTR_OPS) {
+	/*
+	 * The attributes of a global constant are a pointer in a literal of the opcode that declares the constant.
+	 * ZEND_ACC_PTR_OPS has the value of ZEND_ACC_OVERRIDE, and only the code outside of all functions can have it.
+	 */
+	if (!op_array->function_name && (op_array->fn_flags & ZEND_ACC_PTR_OPS)) {
 		for (uint32_t i = 0; i + 1 < op_array->last; i++) {
 			zend_op *opline = &op_array->opcodes[i];
 
