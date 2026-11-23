@@ -2,6 +2,8 @@
 Property hooks report their lines
 --EXTENSIONS--
 turbocov
+--SKIPIF--
+<?php if (PHP_VERSION_ID < 80400) die('skip property hooks require PHP 8.4'); ?>
 --INI--
 turbocov.collect_paths={PWD}/fixtures
 --FILE--
