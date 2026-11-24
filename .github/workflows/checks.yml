@@ -45,8 +45,8 @@ jobs:
                 name: Build and test
                 run: dev/build-in-place.sh ${{ matrix.build }}
                 env:
-                    # PHP 8.3 has no property hooks; PHP 8.6 has no PCOV, Xdebug or parallel here.
-                    EXPECT_SKIPS: ${{ matrix.build == 'turbocov' && (matrix.php-version == '8.3' && '1' || matrix.php-version == '8.6' && '3' || '0') || '0' }}
+                    # The tests that load PCOV, Xdebug and parallel
+                    EXPECT_SKIPS: ${{ matrix.build == 'turbocov' && matrix.php-version == '8.6' && '3' || '0' }}
 
     clang:
         name: PHP ${{ matrix.php-version }} built with Clang${{ matrix.arch == 'arm64' && ', arm64' || '' }}
@@ -100,7 +100,7 @@ jobs:
                     dev/build-in-place.sh turbocov
                 env:
                     # PCOV and Xdebug are not in this PHP build
-                    EXPECT_SKIPS: ${{ startsWith(matrix.php-version, '8.3.') && '3' || '2' }}
+                    EXPECT_SKIPS: 2
 
     sanitizers:
         name: PHP ${{ matrix.php-version }} debug build with AddressSanitizer, ${{ matrix.build }}${{ matrix.arch == 'arm64' && ', arm64' || '' }}
@@ -162,7 +162,7 @@ jobs:
                     # turbocov does not free its tables at the end of the process. A later change does that.
                     ASAN_OPTIONS: detect_leaks=0
                     # PCOV and Xdebug are not in this PHP build
-                    EXPECT_SKIPS: ${{ matrix.build == 'turbocov' && (startsWith(matrix.php-version, '8.3.') && '3' || '2') || '0' }}
+                    EXPECT_SKIPS: ${{ matrix.build == 'turbocov' && '2' || '0' }}
             -
                 # --asan turns the memory manager of PHP off, so AddressSanitizer sees each allocation.
                 name: Test without the memory manager of PHP
@@ -176,7 +176,7 @@ jobs:
                     # turbocov does not free its tables at the end of the process. A later change does that.
                     ASAN_OPTIONS: detect_leaks=0
                     # PCOV and Xdebug are not in this PHP build
-                    EXPECT_SKIPS: ${{ matrix.build == 'turbocov' && (startsWith(matrix.php-version, '8.3.') && '3' || '2') || '0' }}
+                    EXPECT_SKIPS: ${{ matrix.build == 'turbocov' && '2' || '0' }}
                     RUN_TESTS_FLAGS: --asan
 
     macos:
@@ -201,8 +201,6 @@ jobs:
             -
                 name: Build and test
                 run: dev/build-in-place.sh turbocov
-                env:
-                    EXPECT_SKIPS: ${{ matrix.php-version == '8.3' && '1' || '0' }}
 
     macos-clang:
         name: PHP ${{ matrix.php-version }} built with Apple Clang, macOS arm64
@@ -246,4 +244,4 @@ jobs:
                     dev/build-in-place.sh turbocov
                 env:
                     # PCOV and Xdebug are not in this PHP build
-                    EXPECT_SKIPS: ${{ startsWith(matrix.php-version, '8.3.') && '3' || '2' }}
+                    EXPECT_SKIPS: 2
